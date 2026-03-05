@@ -45,7 +45,7 @@
   .main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 
   #sandbox {
-    flex: 1; position: relative; cursor: crosshair; overflow: hidden;
+    flex: 1; position: relative; overflow: hidden;
     background: radial-gradient(ellipse at 50% 55%, #111408 0%, #080a06 100%);
   }
   #sandbox::before {
@@ -53,7 +53,7 @@
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
     pointer-events: none; z-index: 1; opacity: .5;
   }
-  #wormCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
+  #wormCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; cursor: crosshair; }
 
   .right-col {
     width: 232px; display: flex; flex-direction: column;
@@ -934,7 +934,15 @@ function setTool(t){
   });
 }
 
+let lastStimTick = -1;
+
 function applyStim(x, y){
+  // Poke only fires once per mousedown, not continuously
+  if(tool==='poke' && lastStimTick===tick) return;
+  // Heat/light throttled to every 4 ticks to avoid lockup
+  if((tool==='heat'||tool==='light') && tick-lastStimTick < 4) return;
+  lastStimTick = tick;
+
   spawnRipple(x, y, tool);
 
   if(tool==='food'){
@@ -1159,24 +1167,37 @@ function lg(msg,hi=false,cls=''){
 }
 
 // ============================================================
-// INPUT
+// INPUT — attach to canvas directly, not sandbox wrapper
 // ============================================================
-const sb=document.getElementById('sandbox');
-sb.addEventListener('mousemove',e=>{
-  const r=sb.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top;
-  if(mdown) applyStim(mx,my);
+canvas.addEventListener('mousemove', e=>{
+  const r = canvas.getBoundingClientRect();
+  mx = e.clientX - r.left;
+  my = e.clientY - r.top;
+  if(mdown) applyStim(mx, my);
 });
-sb.addEventListener('mousedown',e=>{
+canvas.addEventListener('mousedown', e=>{
   e.preventDefault();
-  mdown=true;
-  const r=sb.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top;
-  applyStim(mx,my);
+  mdown = true;
+  const r = canvas.getBoundingClientRect();
+  mx = e.clientX - r.left;
+  my = e.clientY - r.top;
+  applyStim(mx, my);
 });
-sb.addEventListener('mouseup',()=>mdown=false);
-sb.addEventListener('mouseleave',()=>mdown=false);
-sb.addEventListener('touchstart',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];mx=t.clientX-r.left;my=t.clientY-r.top;mdown=true;applyStim(mx,my);},{passive:false});
-sb.addEventListener('touchmove',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];mx=t.clientX-r.left;my=t.clientY-r.top;applyStim(mx,my);},{passive:false});
-sb.addEventListener('touchend',()=>mdown=false);
+canvas.addEventListener('mouseup',   ()=>mdown=false);
+canvas.addEventListener('mouseleave',()=>mdown=false);
+canvas.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect(), t=e.touches[0];
+  mx=t.clientX-r.left; my=t.clientY-r.top; mdown=true;
+  applyStim(mx,my);
+},{passive:false});
+canvas.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect(), t=e.touches[0];
+  mx=t.clientX-r.left; my=t.clientY-r.top;
+  applyStim(mx,my);
+},{passive:false});
+canvas.addEventListener('touchend', ()=>mdown=false);
 
 // ============================================================
 // MAIN LOOP
