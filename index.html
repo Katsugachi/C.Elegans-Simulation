@@ -952,68 +952,44 @@ function applyStim(x, y, fresh){
     return;
   }
 
-  let bestWorm=null, bestD=Infinity, bestSeg=0;
-  worms.forEach(w=>{
-    w.segs.forEach((s,i)=>{
-      const d=Math.hypot(s.x-x, s.y-y);
-      if(d<bestD){ bestD=d; bestWorm=w; bestSeg=i; }
-    });
-  });
-  if(!bestWorm) return;
+  if(!worms.length) return;
+
+  // Find nearest worm — always works, no proximity gate
+  let bestWorm=worms[0], bestD=Infinity, bestSeg=0;
+  for(let wi=0;wi<worms.length;wi++){
+    const w=worms[wi];
+    for(let si=0;si<w.segs.length;si++){
+      const s=w.segs[si];
+      const d=(s.x-x)*(s.x-x)+(s.y-y)*(s.y-y);
+      if(d<bestD){ bestD=d; bestWorm=w; bestSeg=si; }
+    }
+  }
 
   const isHead = bestSeg < NSEGS*0.25;
   const isTail = bestSeg > NSEGS*0.75;
 
   if(tool==='poke'){
-    if(!isTail){ bestWorm._stim('ASH',0.9); bestWorm._stim('ALM',isHead?.8:.5); bestWorm._stim('AVM',.7); lg(`poke W${bestWorm.id+1} ${isHead?'head':'body'} → reversal`, true); }
-    else        { bestWorm._stim('PVD',0.9); bestWorm._stim('PLM',.8); bestWorm._stim('PVC',.7); lg(`poke W${bestWorm.id+1} tail → acceleration`, true); }
+    // Directly flip angle away from click point — guaranteed visible
+    const away = Math.atan2(bestWorm.segs[0].y - y, bestWorm.segs[0].x - x);
+    bestWorm.angle = away + (Math.random()-.5)*0.5;
+    bestWorm._stim('ASH', 1.0); bestWorm._stim('AVA', 1.0); bestWorm._stim('AVD', 0.8);
+    if(!isTail){ bestWorm._stim('ALM', 0.8); bestWorm._stim('AVM', 0.8); }
+    else       { bestWorm._stim('PVD', 1.0); bestWorm._stim('PLM', 0.9); }
+    lg(`poke W${bestWorm.id+1} seg${bestSeg} → flee`, true);
   } else if(tool==='heat'){
-    bestWorm._stim('AFD',.75); bestWorm._stim('ASH',.5);
-    lg(`W${bestWorm.id+1} heat → AFD thermosensor`, false);
+    bestWorm._stim('AFD', 1.0); bestWorm._stim('ASH', 0.8);
+    bestWorm.angle += (Math.random()-.5)*Math.PI;
+    lg(`W${bestWorm.id+1} heat`, false);
   } else if(tool==='light'){
-    bestWorm._stim('ASH',.65); bestWorm._stim('AWC',-.35);
-    lg(`W${bestWorm.id+1} light → photonociception`, false);
+    bestWorm._stim('ASH', 0.9); bestWorm._stim('AWC', -0.5);
+    bestWorm.angle += (Math.random()-.5)*Math.PI*0.8;
+    lg(`W${bestWorm.id+1} light`, false);
   }
 }
 
 // ============================================================
-// INPUT
+// INPUT — wired up inside window load handler below
 // ============================================================
-// offsetX/offsetY are always relative to the element — no rect math needed
-canvas.onmousemove = e=>{
-  mx = e.offsetX; my = e.offsetY;
-  if(mdown && (tool==='heat'||tool==='light')) applyStim(mx,my,false);
-};
-canvas.onmousedown = e=>{
-  mdown=true; mx=e.offsetX; my=e.offsetY;
-  applyStim(mx,my,true);
-};
-canvas.onmouseup   = ()=>mdown=false;
-canvas.onmouseleave= ()=>mdown=false;
-
-// Also attach to overlay in case canvas is covered
-const overlay = document.getElementById('clickOverlay');
-overlay.onmousemove = e=>{ mx=e.offsetX; my=e.offsetY; if(mdown&&(tool==='heat'||tool==='light')) applyStim(mx,my,false); };
-overlay.onmousedown = e=>{
-  mdown=true; mx=e.offsetX; my=e.offsetY;
-  lg(`CLICK (${Math.round(mx)},${Math.round(my)}) tool=${tool}`, true);
-  applyStim(mx,my,true);
-};
-overlay.onmouseup   = ()=>mdown=false;
-overlay.onmouseleave= ()=>mdown=false;
-
-window.addEventListener('touchstart', e=>{
-  const t=e.touches[0], r=canvas.getBoundingClientRect();
-  mdown=true; mx=t.clientX-r.left; my=t.clientY-r.top;
-  applyStim(mx,my,true);
-},{passive:true});
-window.addEventListener('touchmove', e=>{
-  const t=e.touches[0], r=canvas.getBoundingClientRect();
-  mx=t.clientX-r.left; my=t.clientY-r.top;
-  if(tool==='heat'||tool==='light') applyStim(mx,my,false);
-},{passive:true});
-window.addEventListener('touchend', ()=>mdown=false);
-window.addEventListener('mouseup',  ()=>mdown=false);
 
 // ============================================================
 // RENDERING
@@ -1268,6 +1244,18 @@ window.addEventListener('load', () => {
   addWorm();
   lg('302 neurons · Hebbian learning · gap junctions · social circuit', false);
   lg('use + add worm to create a colony', false);
+
+  // Attach input events here — guaranteed DOM ready, no inline HTML needed
+  const ov = document.getElementById('clickOverlay');
+  ov.addEventListener('mousedown',  e=>{ mdown=true;  mx=e.offsetX; my=e.offsetY; lg(`CLICK ${Math.round(mx)},${Math.round(my)}`,true); applyStim(mx,my,true); });
+  ov.addEventListener('mousemove',  e=>{ mx=e.offsetX; my=e.offsetY; if(mdown&&(tool==='heat'||tool==='light')) applyStim(mx,my,false); });
+  ov.addEventListener('mouseup',    ()=>mdown=false);
+  ov.addEventListener('mouseleave', ()=>mdown=false);
+  window.addEventListener('mouseup', ()=>mdown=false);
+  ov.addEventListener('touchstart', e=>{ const t=e.touches[0],r=ov.getBoundingClientRect(); mdown=true; mx=t.clientX-r.left; my=t.clientY-r.top; applyStim(mx,my,true); },{passive:true});
+  ov.addEventListener('touchmove',  e=>{ const t=e.touches[0],r=ov.getBoundingClientRect(); mx=t.clientX-r.left; my=t.clientY-r.top; if(tool==='heat'||tool==='light') applyStim(mx,my,false); },{passive:true});
+  ov.addEventListener('touchend',   ()=>mdown=false);
+
   loop();
 });
 </script>
