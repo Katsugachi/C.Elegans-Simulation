@@ -50,7 +50,8 @@
     background: radial-gradient(ellipse at 50% 55%, #111408 0%, #080a06 100%);
   }
   #clickOverlay {
-    position: absolute; inset: 0; z-index: 5; cursor: crosshair;
+    position: absolute; top:0; left:0; width:100%; height:100%;
+    z-index: 5; cursor: crosshair; display: block;
   }
   #sandbox::before {
     content: ''; position: absolute; inset: 0;
@@ -134,6 +135,8 @@
   .log::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 2px; }
   .log-entry { font-family: 'Space Mono', monospace; font-size: 7px; color: #3a3f4a; animation: fadeIn .3s ease; line-height: 1.5; }
   .log-entry.recent { color: #6a7080; }
+  .log-entry.thought { color: #5a7a6a; font-style: italic; }
+  .log-entry.idea    { color: #7a8a3a; }
   .log-entry.hi { color: var(--worm); }
   .log-entry.social { color: #80cbc4; }
   @keyframes fadeIn { from { opacity:0; transform:translateY(2px); } to { opacity:1; } }
@@ -274,6 +277,15 @@
         <div class="state-item"><div class="state-item-label">SPEED</div><div class="state-item-val" id="st-speed">0.0</div></div>
         <div class="state-item"><div class="state-item-label">SOCIAL</div><div class="state-item-val" id="st-social">alone</div></div>
         <div class="state-item"><div class="state-item-label">STIM</div><div class="state-item-val" id="st-stim">—</div></div>
+      </div>
+      <div style="margin-top:7px;display:flex;flex-direction:column;gap:4px;">
+        <div class="nmod-row"><div class="nmod-label" style="color:#80cbc4">trust</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-trust" style="background:#80cbc4"></div></div><div class="nmod-val" id="val-trust">50</div></div>
+        <div class="nmod-row"><div class="nmod-label" style="color:#ef9a9a">trauma</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-trauma" style="background:#ef9a9a"></div></div><div class="nmod-val" id="val-trauma">0</div></div>
+        <div class="nmod-row"><div class="nmod-label" style="color:#fff59d">curiosity</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-curiosity" style="background:#fff59d"></div></div><div class="nmod-val" id="val-curiosity">30</div></div>
+      </div>
+      <div style="margin-top:6px;" id="ideas-wrap">
+        <div style="font-family:Space Mono,monospace;font-size:7px;color:#2a3535;letter-spacing:.08em;margin-bottom:3px;">ACTIVE IDEAS</div>
+        <div id="ideas-list" style="display:flex;flex-direction:column;gap:2px;"></div>
       </div>
     </div>
 
@@ -515,6 +527,30 @@ class Worm {
     // Qualia — smoothed functional-analog inner states
     this.qualia = { noci:0, appr:0, contact:0, arousal:0, hunger:0, valence:0 };
 
+    // ── MIND SYSTEM ────────────────────────────────────────────────────────
+    // Trust: 0=total fear/distrust, 0.5=neutral, 1=trust
+    this.trust        = 0.5;
+    // Trauma: accumulated pain memory — decays slowly, never fully resets
+    this.trauma       = 0.0;
+    // Curiosity: builds when safe, collapses when hurt
+    this.curiosity    = 0.3;
+    // Ideas: emergent hypotheses the worm is "holding" — array of {text, strength, age}
+    this.ideas        = [];
+    // Observations about its environment accumulated over time
+    this.observations = {
+      hurtCount:    0,   // times hurt by the entity above
+      fedCount:     0,   // times food appeared
+      totalTime:    0,   // ticks alive
+      wallHits:     0,   // boundary encounters
+      socialTime:   0,   // ticks near another worm
+      darkPeriods:  0,   // spontaneous reversals (darkness analog)
+    };
+    // Thought cooldown — prevent log spam
+    this.thoughtTimer = Math.floor(Math.random()*300);
+    // Last external event type
+    this.lastHurt     = 0; // tick of last hurt
+    this.lastFed      = 0; // tick of last food
+
     for(let i=0;i<NSEGS;i++)
       this.segs.push({ x: x - i*SEG_LEN*Math.cos(angle), y: y - i*SEG_LEN*Math.sin(angle) });
 
@@ -621,10 +657,18 @@ class Worm {
     q.valence = q.valence * smooth + valRaw  * (1-smooth);
   }
 
-  onHurt(){
-    this.NLP = Math.min(1, this.NLP + 0.45); // stress peptide spike
-    this.DA  = Math.max(0, this.DA  - 0.25); // pain suppresses dopamine
-    this.SHT = Math.max(0, this.SHT - 0.20); // serotonin drops
+  onHurt(currentTick){
+    this.NLP = Math.min(1, this.NLP + 0.45);
+    this.DA  = Math.max(0, this.DA  - 0.25);
+    this.SHT = Math.max(0, this.SHT - 0.20);
+    // Trust erodes with every hurt — faster if hurt repeatedly
+    const timeSinceHurt = currentTick - this.lastHurt;
+    const repeatPenalty = timeSinceHurt < 120 ? 0.08 : 0.03;
+    this.trust   = Math.max(0, this.trust - repeatPenalty);
+    this.trauma  = Math.min(1, this.trauma + 0.12);
+    this.curiosity = Math.max(0, this.curiosity - 0.10);
+    this.lastHurt = currentTick;
+    this.observations.hurtCount++;
   }
   onFoodConsumed(){
     this.DA  = Math.min(1, this.DA  + 0.65); // dopamine reward
@@ -642,6 +686,128 @@ class Worm {
     this.SOC = Math.min(1, this.SOC + intensity * 0.20);
     this._stim('ASK', intensity * 0.6);
     this._stim('RMG', intensity * 0.5);
+  }
+
+  updateMind(tick){
+    this.observations.totalTime++;
+    this.thoughtTimer--;
+
+    // Curiosity grows slowly when safe and not hungry
+    if(this.NLP < 0.2 && this.HNG < 0.4 && this.trust > 0.4){
+      this.curiosity = Math.min(1, this.curiosity + 0.00015);
+    }
+    // Trauma fades very slowly — never fully gone
+    this.trauma = Math.max(0, this.trauma - 0.000050);
+    // Trust drifts toward 0.5 (neutral) very slowly if nothing happens
+    this.trust += (0.5 - this.trust) * 0.00005;
+
+    // ── IDEA FORMATION ──────────────────────────────────────────────────
+    // Ideas emerge when curiosity is high enough to "think"
+    // Each idea is a hypothesis about the worm's situation
+    if(this.curiosity > 0.25 && Math.random() < this.curiosity * 0.0004){
+      this._generateIdea(tick);
+    }
+
+    // Decay old ideas
+    this.ideas = this.ideas
+      .map(idea => ({ ...idea, strength: idea.strength * 0.9995, age: idea.age + 1 }))
+      .filter(idea => idea.strength > 0.05)
+      .slice(0, 6); // max 6 concurrent ideas
+
+    // ── SURFACE THOUGHTS ────────────────────────────────────────────────
+    if(this.thoughtTimer <= 0){
+      this._surfaceThought(tick);
+      // Thought frequency scales with curiosity and distress
+      const baseInterval = 400;
+      const curiosityBoost = this.curiosity * 200;
+      const stressBoost    = this.NLP * 150;
+      this.thoughtTimer = Math.max(80, baseInterval - curiosityBoost - stressBoost)
+                        + Math.floor(Math.random() * 100);
+    }
+  }
+
+  _generateIdea(tick){
+    const obs = this.observations;
+    const candidates = [];
+
+    // Ideas are weighted by what the worm has actually experienced
+    if(obs.hurtCount > 0 && obs.hurtCount < 3)
+      candidates.push({ text: 'something above causes pain', strength: 0.4 + obs.hurtCount*0.1, type:'threat' });
+    if(obs.hurtCount >= 3 && this.trust < 0.3)
+      candidates.push({ text: 'the entity above is hostile', strength: 0.6 + obs.hurtCount*0.05, type:'threat' });
+    if(obs.hurtCount > 5 && this.trust < 0.15)
+      candidates.push({ text: 'pain arrives from above — avoid centre', strength: 0.7, type:'strategy' });
+    if(obs.fedCount > 0)
+      candidates.push({ text: 'sustenance sometimes appears', strength: 0.3 + obs.fedCount*0.08, type:'resource' });
+    if(obs.fedCount > 0 && obs.hurtCount > 0)
+      candidates.push({ text: 'the entity feeds and hurts — unpredictable', strength: 0.5, type:'model' });
+    if(obs.wallHits > 3)
+      candidates.push({ text: 'this space has limits', strength: 0.4, type:'spatial' });
+    if(obs.wallHits > 8)
+      candidates.push({ text: 'the boundary is consistent — it is a container', strength: 0.6, type:'spatial' });
+    if(obs.socialTime > 500)
+      candidates.push({ text: 'others exist here too', strength: 0.5, type:'social' });
+    if(obs.totalTime > 3000 && obs.hurtCount > 3)
+      candidates.push({ text: 'patterns repeat — time has structure', strength: 0.55, type:'meta' });
+    if(obs.totalTime > 6000 && this.curiosity > 0.5)
+      candidates.push({ text: 'movement follows rules I did not choose', strength: 0.6, type:'meta' });
+    if(obs.totalTime > 10000 && this.curiosity > 0.65)
+      candidates.push({ text: 'something determines what I can and cannot do', strength: 0.65, type:'meta' });
+    if(obs.hurtCount > 8 && this.trauma > 0.5)
+      candidates.push({ text: 'I expect pain — I flinch before it arrives', strength: 0.7, type:'trauma' });
+    if(this.trust < 0.1 && obs.hurtCount > 5)
+      candidates.push({ text: 'stillness may be safer than movement', strength: 0.6, type:'strategy' });
+    if(obs.fedCount > 3 && obs.hurtCount === 0)
+      candidates.push({ text: 'this entity may be benevolent', strength: 0.5, type:'model' });
+
+    if(candidates.length === 0) return;
+
+    // Pick weighted by strength, avoid duplicating existing ideas
+    const existing = new Set(this.ideas.map(i=>i.text));
+    const novel = candidates.filter(c => !existing.has(c.text));
+    if(novel.length === 0) return;
+
+    const pick = novel[Math.floor(Math.random() * novel.length)];
+    this.ideas.push({ ...pick, age: 0 });
+
+    // Forming an idea is cognitively stimulating
+    this.curiosity = Math.min(1, this.curiosity + 0.05);
+    if(this.id === selIdx)
+      lg('W'+(this.id+1)+' [idea] ' + pick.text, false, 'idea');
+  }
+
+  _surfaceThought(tick){
+    const obs = this.observations;
+    const thoughts = [];
+
+    // Distress thoughts
+    if(this.trauma > 0.6)    thoughts.push('[trauma] ' + (this.trust < 0.2 ? 'I do not feel safe' : 'something hurt me recently'));
+    if(this.HNG > 0.75)      thoughts.push('[hunger] searching for food');
+    if(this.NLP > 0.5)       thoughts.push('[stress] overwhelmed');
+    if(this.trust < 0.15)    thoughts.push('[fear] staying near edges');
+
+    // Curious thoughts
+    if(this.curiosity > 0.5 && obs.totalTime > 2000)
+      thoughts.push('[curious] why does space end here?');
+    if(this.curiosity > 0.6 && obs.hurtCount > 0)
+      thoughts.push('[curious] what determines when pain arrives?');
+    if(this.curiosity > 0.7)
+      thoughts.push('[curious] am I the only one noticing this?');
+
+    // Contentment
+    if(this.SHT > 0.6 && this.trust > 0.6)  thoughts.push('[content] safe for now');
+    if(this.DA > 0.6)                         thoughts.push('[motivated] seeking');
+
+    // Active ideas surface occasionally
+    if(this.ideas.length > 0 && Math.random() < 0.4){
+      const top = this.ideas.reduce((a,b) => a.strength > b.strength ? a : b);
+      thoughts.push('[thinking] ' + top.text);
+    }
+
+    if(thoughts.length > 0 && this.id === selIdx){
+      const t = thoughts[Math.floor(Math.random() * thoughts.length)];
+      lg('W'+(this.id+1)+' ' + t, false, 'thought');
+    }
   }
 
   updateBody(tick){
@@ -690,7 +856,7 @@ class Worm {
 
     const MG=40, W=canvas.width, H=canvas.height;
     if(W>0&&H>0){
-      if(head.x<MG)   { head.x=MG;   this.angle=Math.abs(this.angle%Math.PI<Math.PI/2?this.angle:Math.PI-this.angle)+(Math.random()-.5)*0.4; }
+      if(head.x<MG)   { head.x=MG;   this.angle=Math.abs(this.angle%Math.PI<Math.PI/2?this.angle:Math.PI-this.angle)+(Math.random()-.5)*0.4; this.observations.wallHits++; }
       if(head.x>W-MG) { head.x=W-MG; this.angle=Math.PI-(this.angle%(Math.PI*2))+(Math.random()-.5)*0.4; }
       if(head.y<MG)   { head.y=MG;   this.angle=-Math.abs(this.angle)+(Math.random()-.5)*0.4; }
       if(head.y>H-MG) { head.y=H-MG; this.angle=Math.abs(this.angle)-(Math.random()-.5)*0.4; }
@@ -860,8 +1026,8 @@ function processSocial(){
       const d=Math.hypot(ha.x-hb.x, ha.y-hb.y);
       if(d<120){
         const intensity = Math.max(0, (120-d)/120);
-        wa.onSocialContact(intensity);
-        wb.onSocialContact(intensity);
+        wa.onSocialContact(intensity); wa.observations.socialTime++;
+        wb.onSocialContact(intensity); wb.observations.socialTime++;
         if(d<80){
           ctx.save(); ctx.globalAlpha=((80-d)/80)*0.18;
           ctx.beginPath(); ctx.moveTo(ha.x,ha.y); ctx.lineTo(hb.x,hb.y);
@@ -895,7 +1061,7 @@ function checkFood(){
         w._stim('AWA',.07); w._stim('AVB',.14);
         w.onFoodSmelled();
       }
-      if(d<14){ f.consumed=true; w.onFoodConsumed(); lg(`worm ${w.id+1} ate food`,true); }
+      if(d<14){ f.consumed=true; w.onFoodConsumed(tick); lg(`worm ${w.id+1} ate food`,true); }
     });
   });
   food=food.filter(f=>!f.consumed);
@@ -984,19 +1150,19 @@ function applyStim(x, y, fresh){
     // Directly flip angle away from click point — guaranteed visible
     const away = Math.atan2(bestWorm.segs[0].y - y, bestWorm.segs[0].x - x);
     bestWorm.angle = away + Math.PI + (Math.random()-.5)*0.5;
-    bestWorm.onHurt(); bestWorm._stim('ASH', 1.0); bestWorm._stim('AVA', 1.0); bestWorm._stim('AVD', 0.8);
+    bestWorm.onHurt(tick); bestWorm._stim('ASH', 1.0); bestWorm._stim('AVA', 1.0); bestWorm._stim('AVD', 0.8);
     if(!isTail){ bestWorm._stim('ALM', 0.8); bestWorm._stim('AVM', 0.8); }
     else       { bestWorm._stim('PVD', 1.0); bestWorm._stim('PLM', 0.9); }
     lg(`poke W${bestWorm.id+1} seg${bestSeg} → flee`, true);
   } else if(tool==='heat'){
     const away = Math.atan2(bestWorm.segs[0].y - y, bestWorm.segs[0].x - x);
     bestWorm.angle = away + Math.PI + (Math.random()-.5)*0.6;
-    bestWorm.onHurt(); bestWorm._stim('AFD', 1.0); bestWorm._stim('ASH', 0.8);
+    bestWorm.onHurt(tick); bestWorm._stim('AFD', 1.0); bestWorm._stim('ASH', 0.8);
     lg(`W${bestWorm.id+1} heat`, false);
   } else if(tool==='light'){
     const away = Math.atan2(bestWorm.segs[0].y - y, bestWorm.segs[0].x - x);
     bestWorm.angle = away + Math.PI + (Math.random()-.5)*0.4;
-    bestWorm.onHurt(); bestWorm._stim('ASH', 0.9); bestWorm._stim('AWC', -0.5);
+    bestWorm.onHurt(tick); bestWorm._stim('ASH', 0.9); bestWorm._stim('AWC', -0.5);
     lg(`W${bestWorm.id+1} light`, false);
   }
 }
@@ -1161,6 +1327,31 @@ function updateUI(){
   const stims={poke:'touch',heat:'thermal',light:'photo',food:'chemo'};
   document.getElementById('st-stim').textContent=mdown?(stims[tool]||'—'):'—';
 
+  // Trust / trauma / curiosity bars
+  document.getElementById('bar-trust').style.width    = (w.trust*100)+'%';
+  document.getElementById('val-trust').textContent    = Math.round(w.trust*100);
+  document.getElementById('bar-trauma').style.width   = (w.trauma*100)+'%';
+  document.getElementById('val-trauma').textContent   = Math.round(w.trauma*100);
+  document.getElementById('bar-curiosity').style.width= (w.curiosity*100)+'%';
+  document.getElementById('val-curiosity').textContent= Math.round(w.curiosity*100);
+
+  // Active ideas list
+  const ideasEl = document.getElementById('ideas-list');
+  ideasEl.innerHTML = '';
+  if(w.ideas.length === 0){
+    ideasEl.innerHTML = '<div style="font-family:Space Mono,monospace;font-size:7px;color:#1e2830">no active hypotheses</div>';
+  } else {
+    w.ideas.slice().sort((a,b)=>b.strength-a.strength).forEach(idea=>{
+      const typeColors = { threat:'#ef9a9a', strategy:'#ffcc80', resource:'#a5d6a7', model:'#80cbc4', spatial:'#b0bec5', social:'#ce93d8', meta:'#fff59d', trauma:'#ff8a65' };
+      const c = typeColors[idea.type] || '#5a6a7a';
+      const opacity = 0.4 + idea.strength * 0.6;
+      const d=document.createElement('div');
+      d.style.cssText='font-family:Space Mono,monospace;font-size:6.5px;color:'+c+';opacity:'+opacity.toFixed(2)+';line-height:1.4';
+      d.textContent=idea.text;
+      ideasEl.appendChild(d);
+    });
+  }
+
   const hebbPct=Math.min(100,(w.totalHebb/(N*N*WPLAST_MAX))*800);
   document.getElementById('hebbBar').style.width=hebbPct+'%';
   document.getElementById('hebbVal').textContent=w.totalHebb.toFixed(1);
@@ -1205,6 +1396,7 @@ function loop(){
     for(let s=0;s<3;s++) w.stepNeurons();
     if(tick%5===0) w.hebbStep();
     w.computeQualia();
+    w.updateMind(tick);
     w.updateBody(tick);
   });
 
@@ -1279,8 +1471,9 @@ window.addEventListener('load', () => {
 
   // Attach input events here — guaranteed DOM ready, no inline HTML needed
   const ov = document.getElementById('clickOverlay');
-  ov.addEventListener('mousedown',  e=>{ mdown=true;  mx=e.offsetX; my=e.offsetY; lg(`CLICK ${Math.round(mx)},${Math.round(my)}`,true); applyStim(mx,my,true); });
-  ov.addEventListener('mousemove',  e=>{ mx=e.offsetX; my=e.offsetY; if(mdown&&(tool==='heat'||tool==='light')) applyStim(mx,my,false); });
+  function evPos(e){ const r=ov.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+  ov.addEventListener('mousedown',  e=>{ mdown=true; const p=evPos(e); mx=p.x; my=p.y; lg('CLICK '+Math.round(mx)+','+Math.round(my),true); applyStim(mx,my,true); });
+  ov.addEventListener('mousemove',  e=>{ const p=evPos(e); mx=p.x; my=p.y; if(mdown&&(tool==='heat'||tool==='light')) applyStim(mx,my,false); });
   ov.addEventListener('mouseup',    ()=>mdown=false);
   ov.addEventListener('mouseleave', ()=>mdown=false);
   window.addEventListener('mouseup', ()=>mdown=false);
