@@ -979,38 +979,45 @@ function applyStim(x, y, fresh){
 // ============================================================
 // INPUT — overlay div sits on top of canvas and catches all events
 // ============================================================
-const overlay = document.getElementById('clickOverlay');
-
-function getPos(e){
-  const r = overlay.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+// ============================================================
+// INPUT — window-level listeners with canvas rect, works everywhere incl. GH Pages
+// ============================================================
+function getCanvasPos(clientX, clientY){
+  const r = canvas.getBoundingClientRect();
+  return { x: clientX - r.left, y: clientY - r.top };
+}
+function inCanvas(clientX, clientY){
+  const r = canvas.getBoundingClientRect();
+  return clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom;
 }
 
-overlay.addEventListener('mousemove', e=>{
-  const p = getPos(e); mx=p.x; my=p.y;
-  if(mdown && (tool==='heat'||tool==='light')) applyStim(mx, my, false);
+window.addEventListener('mousemove', e=>{
+  if(!inCanvas(e.clientX, e.clientY)){ mdown=false; return; }
+  const p=getCanvasPos(e.clientX,e.clientY); mx=p.x; my=p.y;
+  if(mdown && (tool==='heat'||tool==='light')) applyStim(mx,my,false);
 });
-overlay.addEventListener('mousedown', e=>{
-  e.preventDefault();
-  mdown = true;
-  const p = getPos(e); mx=p.x; my=p.y;
-  applyStim(mx, my, true);
+window.addEventListener('mousedown', e=>{
+  if(!inCanvas(e.clientX, e.clientY)) return;
+  mdown=true;
+  const p=getCanvasPos(e.clientX,e.clientY); mx=p.x; my=p.y;
+  applyStim(mx,my,true);
 });
-overlay.addEventListener('mouseup',    ()=>mdown=false);
-overlay.addEventListener('mouseleave', ()=>mdown=false);
-overlay.addEventListener('touchstart', e=>{
+window.addEventListener('mouseup', ()=>mdown=false);
+window.addEventListener('touchstart', e=>{
+  const t=e.touches[0];
+  if(!inCanvas(t.clientX,t.clientY)) return;
   e.preventDefault(); mdown=true;
-  const r=overlay.getBoundingClientRect(), t=e.touches[0];
-  mx=t.clientX-r.left; my=t.clientY-r.top;
-  applyStim(mx, my, true);
+  const p=getCanvasPos(t.clientX,t.clientY); mx=p.x; my=p.y;
+  applyStim(mx,my,true);
 },{passive:false});
-overlay.addEventListener('touchmove', e=>{
+window.addEventListener('touchmove', e=>{
+  const t=e.touches[0];
   e.preventDefault();
-  const r=overlay.getBoundingClientRect(), t=e.touches[0];
-  mx=t.clientX-r.left; my=t.clientY-r.top;
-  if(tool==='heat'||tool==='light') applyStim(mx, my, false);
+  const p=getCanvasPos(t.clientX,t.clientY); mx=p.x; my=p.y;
+  if(tool==='heat'||tool==='light') applyStim(mx,my,false);
 },{passive:false});
-overlay.addEventListener('touchend', ()=>mdown=false);
+window.addEventListener('touchend', ()=>mdown=false);
+
 // ============================================================
 // RENDERING
 // ============================================================
