@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C. elegans — Neural Sandbox</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0c0f; --worm: #c8e6a0; --worm-dark: #7ab648;
+    --ns: #4fc3f7; --ni: #ce93d8; --nm: #ffb74d; --act: #fff59d;
+    --text: #e8e8d8; --dim: #555; --panel: #111318;
+  }
+
+  html, body {
+    background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    height: 100%; display: flex; flex-direction: column;
+    overflow: hidden; user-select: none;
+  }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 18px; border-bottom: 1px solid #1e2228;
+    flex-shrink: 0; background: #0d0f13;
+  }
+  .title { font-family: 'Space Mono', monospace; font-size: 12px; letter-spacing: .08em; color: var(--worm); }
+  .title span { color: var(--dim); }
+  .hdr-right { display: flex; gap: 10px; align-items: center; }
+
+  .legend { display: flex; gap: 14px; font-size: 9px; color: var(--dim); font-family: 'Space Mono', monospace; }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  .add-btn {
+    font-family: 'Space Mono', monospace; font-size: 8px; letter-spacing: .08em;
+    background: #0e1a09; border: 1px solid var(--worm-dark); border-radius: 4px;
+    color: var(--worm); padding: 4px 10px; cursor: pointer; transition: all .14s;
+  }
+  .add-btn:hover { background: #162808; }
+  .add-btn:disabled { opacity: .35; cursor: default; }
+
+  .main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+  #sandbox {
+    flex: 1; position: relative; cursor: crosshair; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 55%, #111408 0%, #080a06 100%);
+  }
+  #sandbox::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 10; opacity: .5;
+  }
+  #wormCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .right-col {
+    width: 232px; display: flex; flex-direction: column;
+    background: var(--panel); border-left: 1px solid #1e2228;
+    overflow: hidden; flex-shrink: 0;
+  }
+  .panel-section { padding: 10px 13px; border-bottom: 1px solid #1a1d22; flex-shrink: 0; }
+  .panel-label {
+    font-family: 'Space Mono', monospace; font-size: 8px;
+    letter-spacing: .14em; color: var(--dim); text-transform: uppercase; margin-bottom: 7px;
+  }
+
+  .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+
+  /* Qualia panel */
+  .qualia-section { padding: 10px 13px; border-bottom: 1px solid #1a1d22; flex-shrink: 0; }
+  .qualia-ring-wrap { display: flex; align-items: center; gap: 10px; }
+  #qualiaCanvas { border-radius: 50%; display: block; flex-shrink: 0; }
+  .qualia-labels { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+  .qualia-row { display: flex; align-items: center; gap: 5px; font-family: 'Space Mono', monospace; font-size: 7px; }
+  .qualia-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .qualia-name { color: #555; width: 44px; flex-shrink: 0; }
+  .qualia-val { color: #888; margin-left: auto; }
+  .tool-btn {
+    background: #161920; border: 1px solid #252830; border-radius: 6px;
+    color: #777; font-family: 'Space Mono', monospace; font-size: 8px;
+    padding: 7px 4px 6px; cursor: pointer; text-align: center;
+    transition: all .15s; display: flex; flex-direction: column; align-items: center; gap: 5px;
+    letter-spacing: .05em;
+  }
+  .tool-btn svg { display: block; }
+  .tool-btn:hover { border-color: #3a3f4a; background: #1c2028; color: var(--text); }
+  .tool-btn.t-poke  { background: #120d1a; border-color: #ab47bc; color: #ce93d8; }
+  .tool-btn.t-heat  { background: #1f1008; border-color: #ff5722; color: #ffab91; }
+  .tool-btn.t-light { background: #1a1800; border-color: #fdd835; color: #fff59d; }
+  .tool-btn.t-food  { background: #0d1a10; border-color: #66bb6a; color: #a5d6a7; }
+
+  .nmod-grid { display: flex; flex-direction: column; gap: 4px; }
+  .nmod-row { display: flex; align-items: center; gap: 7px; }
+  .nmod-label { font-family: 'Space Mono', monospace; font-size: 7px; width: 32px; flex-shrink: 0; }
+  .nmod-bar-bg { flex: 1; height: 4px; background: #1c1f26; border-radius: 2px; overflow: hidden; }
+  .nmod-bar { height: 100%; border-radius: 2px; transition: width .2s; }
+  .nmod-val { font-family: 'Space Mono', monospace; font-size: 7px; color: #555; width: 22px; text-align: right; }
+
+  .neuro-grid { display: flex; flex-direction: column; gap: 3px; }
+  .neuro-row { display: flex; align-items: center; gap: 6px; font-family: 'Space Mono', monospace; font-size: 7px; }
+  .neuro-name { width: 30px; flex-shrink: 0; }
+  .neuro-bar-bg { flex: 1; height: 3px; background: #1c1f26; border-radius: 2px; overflow: hidden; }
+  .neuro-bar { height: 100%; border-radius: 2px; transition: width .08s; width: 0%; }
+  .neuro-val { width: 22px; text-align: right; color: #555; font-size: 7px; }
+
+  .worm-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .worm-tab {
+    font-family: 'Space Mono', monospace; font-size: 8px; letter-spacing: .06em;
+    padding: 3px 9px; border-radius: 3px; cursor: pointer; border: 1px solid #252830;
+    background: #161920; color: #555; transition: all .12s;
+  }
+  .worm-tab.active { color: var(--text); border-color: #4a5a30; background: #1a2210; }
+  .worm-tab:hover { color: #aaa; }
+
+  .state-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .state-item { background: #161920; border: 1px solid #1e2228; border-radius: 4px; padding: 5px 7px; }
+  .state-item-label { font-family: 'Space Mono', monospace; font-size: 7px; color: var(--dim); letter-spacing: .08em; margin-bottom: 2px; }
+  .state-item-val { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text); }
+
+  .hebb-row { display: flex; align-items: center; gap: 5px; font-family: 'Space Mono', monospace; font-size: 7px; color: #3a4050; margin-top: 3px; }
+  .hebb-bar-bg { flex: 1; height: 2px; background: #1c1f26; border-radius: 1px; overflow: hidden; }
+  .hebb-bar { height: 100%; background: #6ecf8e; border-radius: 1px; transition: width .3s; }
+
+  .log { flex: 1; overflow-y: auto; padding: 7px 13px; display: flex; flex-direction: column; gap: 3px; min-height: 0; }
+  .log::-webkit-scrollbar { width: 2px; }
+  .log::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 2px; }
+  .log-entry { font-family: 'Space Mono', monospace; font-size: 7px; color: #3a3f4a; animation: fadeIn .3s ease; line-height: 1.5; }
+  .log-entry.recent { color: #6a7080; }
+  .log-entry.hi { color: var(--worm); }
+  .log-entry.social { color: #80cbc4; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(2px); } to { opacity:1; } }
+
+  .bottom-bar {
+    padding: 5px 13px; border-top: 1px solid #1a1d22;
+    font-family: 'Space Mono', monospace; font-size: 7px; color: var(--dim);
+    display: flex; justify-content: space-between; flex-shrink: 0;
+  }
+
+  .explainer {
+    flex-shrink: 0; border-top: 1px solid #1e2228;
+    background: #0c0e12; display: flex; overflow: hidden; height: 108px;
+  }
+  .explainer-tabs { display: flex; flex-direction: column; border-right: 1px solid #1e2228; flex-shrink: 0; }
+  .exp-tab {
+    font-family: 'Space Mono', monospace; font-size: 7px; letter-spacing: .1em; color: var(--dim);
+    padding: 0 12px; cursor: pointer; display: flex; align-items: center; gap: 7px;
+    flex: 1; border-bottom: 1px solid #1a1d22; transition: all .12s;
+    white-space: nowrap; min-width: 100px;
+  }
+  .exp-tab:last-child { border-bottom: none; }
+  .exp-tab:hover { color: #aaa; background: #111520; }
+  .exp-tab.active { color: var(--worm); background: #0e1a09; border-right: 2px solid var(--worm-dark); }
+  .explainer-content { flex: 1; overflow: hidden; position: relative; }
+  .exp-panel {
+    position: absolute; inset: 0; padding: 10px 16px;
+    opacity: 0; pointer-events: none; transition: opacity .2s; overflow-y: auto;
+  }
+  .exp-panel::-webkit-scrollbar { width: 2px; }
+  .exp-panel::-webkit-scrollbar-thumb { background: #2a2d35; }
+  .exp-panel.active { opacity: 1; pointer-events: auto; }
+  .exp-panel p { font-size: 11px; line-height: 1.65; color: #8a9aaa; max-width: 900px; }
+  .exp-panel p + p { margin-top: 5px; }
+  .exp-panel strong { color: var(--text); font-weight: 500; }
+  .exp-panel .hs { color: var(--ns); }
+  .exp-panel .hi { color: var(--ni); }
+  .exp-panel .hm { color: var(--nm); }
+  .exp-panel .hy { color: var(--act); }
+/* Ethics modal */
+  #ethicsModal {
+    position: fixed; inset: 0; z-index: 999;
+    background: rgba(5,7,10,0.92);
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .ethics-box {
+    background: #0d0f13; border: 1px solid #2a2d35;
+    border-radius: 10px; max-width: 520px; width: 90%;
+    padding: 28px 30px; box-shadow: 0 8px 48px rgba(0,0,0,0.6);
+  }
+  .ethics-box h2 {
+    font-family: 'Space Mono', monospace; font-size: 11px;
+    letter-spacing: .18em; color: #c8e6a0; text-transform: uppercase;
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .ethics-box h2 svg { flex-shrink: 0; }
+  .ethics-box p {
+    font-size: 12px; line-height: 1.7; color: #8a9aaa; margin-bottom: 10px;
+  }
+  .ethics-box p strong { color: #c8d8b0; font-weight: 500; }
+  .ethics-box .ethics-points {
+    border-top: 1px solid #1e2228; border-bottom: 1px solid #1e2228;
+    padding: 12px 0; margin: 14px 0; display: flex; flex-direction: column; gap: 8px;
+  }
+  .ethics-point {
+    display: flex; gap: 10px; align-items: flex-start;
+    font-size: 11px; line-height: 1.6; color: #7a8a9a;
+  }
+  .ethics-point-icon { flex-shrink: 0; margin-top: 2px; color: #4a5a40; font-family: 'Space Mono', monospace; font-size: 9px; width: 14px; }
+  .ethics-fine {
+    font-size: 10px; color: #3a4050; line-height: 1.6; font-family: 'Space Mono', monospace;
+  }
+  .ethics-confirm {
+    margin-top: 18px; display: flex; align-items: center; gap: 10px;
+  }
+  .ethics-confirm button {
+    font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: .1em;
+    background: #0e1a09; border: 1px solid #7ab648; border-radius: 5px;
+    color: #c8e6a0; padding: 8px 18px; cursor: pointer; transition: all .15s;
+  }
+  .ethics-confirm button:hover { background: #162808; }
+  .ethics-confirm span {
+    font-size: 10px; color: #3a4050; font-family: 'Space Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<div id="ethicsModal">
+  <div class="ethics-box">
+    <h2>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="6" stroke="#c8e6a0" stroke-width="1.2"/>
+        <line x1="7" y1="6" x2="7" y2="10" stroke="#c8e6a0" stroke-width="1.4" stroke-linecap="round"/>
+        <circle cx="7" cy="4" r=".8" fill="#c8e6a0"/>
+      </svg>
+      Research Ethics Notice
+    </h2>
+    <p>This is a <strong>computational simulation</strong> of <em>Caenorhabditis elegans</em> neural circuitry. No biological organisms are involved. All worms, neurons, and behaviours exist solely as mathematical models running in your browser.</p>
+    <div class="ethics-points">
+      <div class="ethics-point"><div class="ethics-point-icon">01</div><div><strong style="color:#8a9aaa">No animals are harmed.</strong> C. elegans is a 1mm soil nematode. The stimuli (poke, heat, light, food) trigger simulated neural responses — there is no physical organism, no tissue, no pain.</div></div>
+      <div class="ethics-point"><div class="ethics-point-icon">02</div><div><strong style="color:#8a9aaa">C. elegans lacks a brain.</strong> Its 302 neurons form a distributed nerve net with no centralised processing. The scientific consensus is that it does not have the neural architecture required for sentience or subjective suffering.</div></div>
+      <div class="ethics-point"><div class="ethics-point-icon">03</div><div><strong style="color:#8a9aaa">The "qualia" panel is epistemic, not empirical.</strong> Labels like "nociception" and "valence" describe functional circuit states, not confirmed subjective experience. They are heuristic proxies used for educational insight, not claims about consciousness.</div></div>
+      <div class="ethics-point"><div class="ethics-point-icon">04</div><div><strong style="color:#8a9aaa">This models real published science.</strong> The connectome is from White et al. (1986) and Varshney et al. (2011) — the only completely mapped nervous system of any animal. Using it in simulation is standard practice in computational neuroscience.</div></div>
+      <div class="ethics-point"><div class="ethics-point-icon">05</div><div><strong style="color:#8a9aaa">Real C. elegans research is tightly regulated.</strong> Live nematode work involves institutional ethics review. This simulation exists precisely to enable exploration without consuming biological resources.</div></div>
+    </div>
+    <p class="ethics-fine">By proceeding you acknowledge this is a scientific visualisation tool. The worms are not real. The neurons are equations. The suffering, if any, is yours alone — contemplating whether equations can suffer.</p>
+    <div class="ethics-confirm">
+      <button onclick="document.getElementById('ethicsModal').style.display='none'">I UNDERSTAND — BEGIN SIMULATION</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="title"><em>Caenorhabditis elegans</em> <span>— neural sandbox</span></div>
+  <div class="hdr-right">
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--ns)"></div>sensory</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--ni)"></div>interneuron</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--nm)"></div>motor</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#80cbc4"></div>social</div>
+    </div>
+    <button class="add-btn" id="addBtn" onclick="addWorm()">+ add worm</button>
+  </div>
+</header>
+
+<div class="main">
+  <div id="sandbox"><canvas id="wormCanvas"></canvas></div>
+
+  <div class="right-col">
+    <div class="panel-section">
+      <div class="panel-label">Worms</div>
+      <div class="worm-tabs" id="wormTabs"></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Stimulus Tool</div>
+      <div class="tools">
+        <button class="tool-btn t-poke" id="btn-poke" onclick="setTool('poke')">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 2 C8.3 2 7 3.4 7 5 L7 11 C7 12.7 8.3 14 10 14 C11.7 14 13 12.7 13 11 L13 5 C13 3.4 11.7 2 10 2Z" stroke="currentColor" stroke-width="1.3" fill="none"/>
+            <line x1="7.5" y1="8" x2="12.5" y2="8" stroke="currentColor" stroke-width=".8" opacity=".5"/>
+            <line x1="7.5" y1="10" x2="12.5" y2="10" stroke="currentColor" stroke-width=".8" opacity=".5"/>
+            <line x1="10" y1="15" x2="10" y2="18.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M7.8 16.5 L10 18.5 L12.2 16.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>POKE
+        </button>
+        <button class="tool-btn" id="btn-heat" onclick="setTool('heat')">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 18 C10 18 4 14.5 4 9.5 C4 6.5 6 4 8 3.5 C7.5 5 8 6 9 6.5 C8.5 5 9 3 11 1.5 C11 3.5 12 5 13 5.5 C14.5 6.5 16 8.5 16 9.5 C16 14.5 10 18 10 18Z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
+            <path d="M10 16 C10 16 7.5 13.5 7.5 11 C7.5 9.5 8.5 8.5 10 8.5 C11.5 8.5 12.5 9.5 12.5 11 C12.5 13.5 10 16 10 16Z" fill="currentColor" opacity=".35"/>
+          </svg>HEAT
+        </button>
+        <button class="tool-btn" id="btn-light" onclick="setTool('light')">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M7 8.5 C7 6.0 8.3 4 10 4 C11.7 4 13 6.0 13 8.5 C13 10.5 11.8 12 10 12.5 C8.2 12 7 10.5 7 8.5Z" stroke="currentColor" stroke-width="1.3" fill="none"/>
+            <line x1="8.2" y1="12.5" x2="11.8" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="8.5" y1="14" x2="11.5" y2="14" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+            <line x1="9" y1="15.5" x2="11" y2="15.5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+            <path d="M9 10 Q10 9 11 10" stroke="currentColor" stroke-width=".9" fill="none" stroke-linecap="round"/>
+            <line x1="10" y1="1.2" x2="10" y2="2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="14.8" y1="3.2" x2="13.8" y2="4.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="5.2" y1="3.2" x2="6.2" y2="4.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="17" y1="8.5" x2="15.5" y2="8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="3" y1="8.5" x2="4.5" y2="8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>LIGHT
+        </button>
+        <button class="tool-btn" id="btn-food" onclick="setTool('food')">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="2.2" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <circle cx="6"  cy="8"  r="1.3" stroke="currentColor" stroke-width="1" fill="none"/>
+            <circle cx="14" cy="8"  r="1.5" stroke="currentColor" stroke-width="1" fill="none"/>
+            <circle cx="7.5" cy="13" r="1.1" stroke="currentColor" stroke-width="1" fill="none"/>
+            <circle cx="13" cy="13" r="1.3" stroke="currentColor" stroke-width="1" fill="none"/>
+            <circle cx="10" cy="5.5" r="1"  stroke="currentColor" stroke-width="1" fill="none"/>
+            <path d="M1.5 10 Q2.5 8.5 3.5 10 Q4.5 11.5 5.5 10" stroke="currentColor" stroke-width=".9" stroke-linecap="round" fill="none" opacity=".55"/>
+            <path d="M14.5 10 Q15.5 8.5 16.5 10 Q17.5 11.5 18.5 10" stroke="currentColor" stroke-width=".9" stroke-linecap="round" fill="none" opacity=".55"/>
+          </svg>FOOD
+        </button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Neuromodulators</div>
+      <div class="nmod-grid">
+        <div class="nmod-row"><div class="nmod-label" style="color:#ef9a9a">DA</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-DA" style="background:#ef9a9a"></div></div><div class="nmod-val" id="val-DA">0</div></div>
+        <div class="nmod-row"><div class="nmod-label" style="color:#80cbc4">5-HT</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-5HT" style="background:#80cbc4"></div></div><div class="nmod-val" id="val-5HT">0</div></div>
+        <div class="nmod-row"><div class="nmod-label" style="color:#ffcc80">NLP</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-NLP" style="background:#ffcc80"></div></div><div class="nmod-val" id="val-NLP">0</div></div>
+        <div class="nmod-row"><div class="nmod-label" style="color:#b0bec5">hunger</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-HNG" style="background:#b0bec5"></div></div><div class="nmod-val" id="val-HNG">0</div></div>
+        <div class="nmod-row"><div class="nmod-label" style="color:#80cbc4">social</div><div class="nmod-bar-bg"><div class="nmod-bar" id="bar-SOC" style="background:#80cbc4"></div></div><div class="nmod-val" id="val-SOC">0</div></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Neural Activity</div>
+      <div class="neuro-grid" id="neuroGrid"></div>
+      <div class="hebb-row">
+        <span style="color:#2a3a20">hebbian Δw</span>
+        <div class="hebb-bar-bg"><div class="hebb-bar" id="hebbBar"></div></div>
+        <span id="hebbVal" style="font-size:7px;color:#3a4a28">0</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Worm State</div>
+      <div class="state-grid">
+        <div class="state-item"><div class="state-item-label">BEHAVIOR</div><div class="state-item-val" id="st-behavior">idle</div></div>
+        <div class="state-item"><div class="state-item-label">SPEED</div><div class="state-item-val" id="st-speed">0.0</div></div>
+        <div class="state-item"><div class="state-item-label">SOCIAL</div><div class="state-item-val" id="st-social">alone</div></div>
+        <div class="state-item"><div class="state-item-label">STIM</div><div class="state-item-val" id="st-stim">—</div></div>
+      </div>
+    </div>
+
+    <!-- Qualia -->
+    <div class="qualia-section">
+      <div class="panel-label">Qualia State</div>
+      <div class="qualia-ring-wrap">
+        <canvas id="qualiaCanvas" width="62" height="62"></canvas>
+        <div class="qualia-labels">
+          <div class="qualia-row"><div class="qualia-dot" style="background:#ef9a9a"></div><div class="qualia-name">nociception</div><div class="qualia-val" id="q-noci">—</div></div>
+          <div class="qualia-row"><div class="qualia-dot" style="background:#fff59d"></div><div class="qualia-name">approach</div><div class="qualia-val" id="q-appr">—</div></div>
+          <div class="qualia-row"><div class="qualia-dot" style="background:#80cbc4"></div><div class="qualia-name">contact</div><div class="qualia-val" id="q-soc">—</div></div>
+          <div class="qualia-row"><div class="qualia-dot" style="background:#ffcc80"></div><div class="qualia-name">arousal</div><div class="qualia-val" id="q-arous">—</div></div>
+          <div class="qualia-row"><div class="qualia-dot" style="background:#b0bec5"></div><div class="qualia-name">hunger</div><div class="qualia-val" id="q-hung">—</div></div>
+          <div class="qualia-row"><div class="qualia-dot" style="background:#ce93d8"></div><div class="qualia-name">valence</div><div class="qualia-val" id="q-val">—</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-label" style="padding:8px 13px 0; flex-shrink:0;">EVENT LOG</div>
+    <div class="log" id="eventLog"></div>
+    <div class="bottom-bar"><span id="tickCount">t=0</span><span id="wormCount">1 worm · 302 neurons</span></div>
+  </div>
+</div>
+
+<div class="explainer">
+  <div class="explainer-tabs">
+    <div class="exp-tab active" id="tab-how" onclick="showTab('how')">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="6" y1="5.2" x2="6" y2="9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <circle cx="6" cy="3.4" r=".7" fill="currentColor"/>
+      </svg>HOW IT WORKS
+    </div>
+    <div class="exp-tab" id="tab-social" onclick="showTab('social')">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <circle cx="4" cy="5" r="2.5" stroke="currentColor" stroke-width="1.1" fill="none"/>
+        <circle cx="8.5" cy="5" r="2.5" stroke="currentColor" stroke-width="1.1" fill="none"/>
+        <path d="M2 10 Q4 8 6.2 9.5 Q7.5 8 10 10" stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round"/>
+      </svg>SOCIAL
+    </div>
+    <div class="exp-tab" id="tab-hebb" onclick="showTab('hebb')">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <circle cx="3" cy="6" r="1.5" stroke="currentColor" stroke-width="1.1" fill="none"/>
+        <circle cx="9" cy="6" r="1.5" stroke="currentColor" stroke-width="1.1" fill="none"/>
+        <line x1="4.5" y1="6" x2="7.5" y2="6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        <path d="M6 3.5 L7 6 L6 8.5" stroke="currentColor" stroke-width=".9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>LEARNING
+    </div>
+    <div class="exp-tab" id="tab-qualia" onclick="showTab('qualia')">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.1" fill="none"/>
+        <circle cx="6" cy="6" r="2" stroke="currentColor" stroke-width="1" fill="none"/>
+        <line x1="6" y1="1" x2="6" y2="2.5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <line x1="6" y1="9.5" x2="6" y2="11" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <line x1="1" y1="6" x2="2.5" y2="6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <line x1="9.5" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+      </svg>QUALIA
+    </div>
+  </div>
+  <div class="explainer-content">
+    <div class="exp-panel active" id="panel-how">
+      <p>Each worm has <strong>302 neurons</strong> running leaky integrate-and-fire dynamics with <strong>spike-rate adaptation</strong>, chemical synapses from the White et al. connectome, and bidirectional gap junctions (Varshney et al. 2011). Body curvature feeds into <span class="hs">DVA</span> as a smoothed proprioceptive signal. Four neuromodulators — <span style="color:#ef9a9a">dopamine</span>, <span style="color:#80cbc4">serotonin</span>, <span style="color:#ffcc80">NLP-12</span>, and hunger — shape circuit-wide gain. Every worm is fully independent: its own neural state, synaptic weights, neuromodulator levels, and body. Click any worm's tab to inspect its internals.</p>
+    </div>
+    <div class="exp-panel" id="panel-social">
+      <p>C. elegans has real social circuits. <span class="hso">RMG</span> (hub-and-spoke interneuron) receives from social sensory neurons <span class="hs">ASK</span> and <span class="hs">ADL</span> and integrates proximity signals to modulate aggregation behaviour. When two worms are within ~80px, their <span class="hs">ASK</span> neurons activate — triggering a serotonin rise, suppressing reversals, and slightly aligning their heading toward each other. Within ~40px they slow down and dwell together (the real <em>bordering</em> behaviour). A shared pheromone field accumulates where worms have been — attracting followers to previously visited paths. Worms near food together reinforce each other's <span class="hso">AIY</span> approach signal.</p>
+    </div>
+    <div class="exp-panel" id="panel-hebb">
+      <p><strong>Hebbian plasticity</strong> is active in every worm: synapses between co-active neurons strengthen, and between anti-correlated ones weaken. The rule is <em>Δw = η · pre · post − decay</em>, applied every 5 ticks. This means a worm that has been poked repeatedly will develop stronger <span class="hs">ASH→AVA</span> weights, making it more sensitised to touch over time. A worm that has found food repeatedly will have stronger <span class="hs">AWA→AIY</span> weights, making it more efficient at chemotaxis. The <strong>Hebbian Δw</strong> bar shows total accumulated plastic change — a proxy for how much the worm has learned from its experience in this session.</p>
+    </div>
+    <div class="exp-panel" id="panel-qualia">
+      <p><strong>Qualia</strong> is what it is like to be something — the redness of red, the sharpness of pain. We cannot know if <em>C. elegans</em> has experience, but we can ask: what would it look like if it did? The <strong>qualia ring</strong> maps six functional-analog states computed from real neural activity. <span style="color:#ef9a9a">Nociception</span> (ASH/PVD/PHB) is the pain-analog. <span style="color:#fff59d">Approach</span> (AWA/AIY) is appetitive draw — something like wanting. <span style="color:#80cbc4">Contact</span> (RMG/ASK/SOC) is the felt presence of others. <span style="color:#ffcc80">Arousal</span> (NLP/SMD/DA) is excitability. <span style="color:#b0bec5">Hunger</span> is a slow-building internal state. <span style="color:#ce93d8">Valence</span> integrates approach minus nociception — a crude proxy for whether the worm's moment is, in some sense, good or bad.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// TABS
+// ============================================================
+function showTab(id){
+  document.querySelectorAll('.exp-tab,.exp-panel').forEach(e=>e.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  document.getElementById('panel-'+id).classList.add('active');
+}
+
+// ============================================================
+// CANVAS — sized AFTER layout is established
+// ============================================================
+const canvas = document.getElementById('wormCanvas');
+const ctx    = canvas.getContext('2d');
+
+function resize(){
+  const sb = document.getElementById('sandbox');
+  canvas.width  = sb.clientWidth;
+  canvas.height = sb.clientHeight;
+  worms.forEach(w=>{
+    const MG=50;
+    w.segs.forEach(s=>{
+      s.x = Math.max(MG, Math.min(canvas.width-MG,  s.x));
+      s.y = Math.max(MG, Math.min(canvas.height-MG, s.y));
+    });
+  });
+}
+window.addEventListener('resize', resize);
+
+// ============================================================
+// NEURON DEFINITIONS
+// ============================================================
+const NEURON_NAMES = [
+  'ASH','ASE','AWC','AWA','AFD','ALM','AVM','PLM','PVD','PHB',
+  'AVA','AVB','AVD','AVE','PVC','DVA','RIA','AIY','AIZ','AIA','AIB','RIB','RIM',
+  'DB1','DB2','VB1','VB2','DA1','VA1','DD1','VD1','SMD','SMV','RME',
+  'RMG','ASK','ADL'
+];
+const N = NEURON_NAMES.length;
+const idx = {};
+NEURON_NAMES.forEach((n,i)=>idx[n]=i);
+
+const Wbase = Array.from({length:N},()=>new Float32Array(N));
+const Wconn = Array.from({length:N},()=>new Uint8Array(N));
+
+function chem(f,t,w){
+  if(idx[f]===undefined||idx[t]===undefined) return;
+  Wbase[idx[t]][idx[f]] = w;
+  Wconn[idx[t]][idx[f]] = 1;
+}
+function gap(a,b,w){
+  if(idx[a]===undefined||idx[b]===undefined) return;
+  Wbase[idx[a]][idx[b]] += w; Wbase[idx[b]][idx[a]] += w;
+  Wconn[idx[a]][idx[b]] = 1; Wconn[idx[b]][idx[a]] = 1;
+}
+
+chem('ASH','AVA',+2.0); chem('ASH','AVD',+1.5); chem('ASH','AIB',+1.0); chem('ASH','RIA',+0.8); chem('ASH','AVE',+1.2);
+chem('ASE','AIY',+1.5); chem('ASE','AIA',+1.0); chem('ASE','AIB',-0.5);
+chem('AWC','AIY',-1.0); chem('AWC','AIB',+1.5); chem('AWC','AIA',+1.2);
+chem('AWA','AIY',+2.0); chem('AWA','AIA',+1.0);
+chem('AFD','AIY',+2.5); chem('AFD','AIZ',-1.0); chem('AFD','RIA',+0.5);
+chem('ALM','AVD',+2.0); chem('ALM','PVC',+1.0); chem('ALM','AVA',+1.0);
+chem('AVM','AVD',+1.5); chem('AVM','PVC',+0.8);
+chem('PLM','PVC',+2.0); chem('PLM','AVD',+0.5);
+chem('PVD','AVA',+1.5); chem('PVD','AVD',+1.0);
+chem('PHB','AVA',+1.5); chem('PHB','AVD',+1.0);
+chem('AIY','RIA',+1.0); chem('AIY','RIB',+0.8);
+chem('AIZ','AIB',+1.0); chem('AIZ','RIM',+0.5);
+chem('AIB','AVA',+1.5); chem('AIB','RIM',+0.8);
+chem('AIA','AIY',+0.5); chem('AIA','AIB',-0.5);
+chem('AVA','AVE',+0.5); chem('AVA','RIM',+0.8);
+chem('AVB','DVA',+0.5); chem('AVB','RIB',+0.5);
+chem('PVC','AVB',+2.0); chem('PVC','DVA',+1.0);
+chem('DVA','AVB',+0.8); chem('DVA','PVC',+0.6);
+chem('RIM','AVA',+0.5); chem('RIM','AVB',-0.8);
+chem('AVB','DB1',+2.0); chem('AVB','DB2',+2.0); chem('AVB','VB1',+2.0); chem('AVB','VB2',+2.0);
+chem('AVA','DA1',+2.0); chem('AVA','VA1',+2.0);
+chem('AVD','DA1',+1.5); chem('AVD','VA1',+1.5); chem('AVD','AVA',+1.0);
+chem('AVE','DA1',+1.0); chem('AVE','VA1',+1.0);
+chem('DVA','DA1',+0.4); chem('DVA','VA1',+0.4);
+chem('RIB','SMD',+1.5); chem('RIB','RME',+1.0);
+chem('AIB','SMD',+0.5); chem('AIB','SMV',+0.5);
+chem('RIA','SMD',+1.0); chem('RIA','SMV',+1.0);
+chem('DD1','VB1',-1.5); chem('DD1','VB2',-1.5);
+chem('VD1','DB1',-1.5); chem('VD1','DB2',-1.5);
+chem('DB1','DD1',+1.0); chem('VB1','VD1',+1.0);
+chem('ASK','RMG',+1.8); chem('ADL','RMG',+1.5);
+chem('RMG','AIY',+1.2); chem('RMG','AVB',+1.0); chem('RMG','AIA',+0.8);
+chem('ASK','AIY',+0.8); chem('ASK','AIA',+0.6);
+chem('ADL','AVA',+0.6);
+gap('AVA','AVD',0.8); gap('AVA','AVE',0.6);
+gap('AVB','PVC',1.0); gap('AVB','DVA',0.5);
+gap('DB1','VB1',0.6); gap('DB2','VB2',0.6);
+gap('DA1','VA1',0.7);
+gap('AIY','AIZ',0.4); gap('RIM','RIA',0.5);
+gap('ALM','AVM',0.6); gap('PLM','PVD',0.5);
+gap('AFD','AIY',0.3); gap('RIB','RIM',0.4);
+gap('DD1','VD1',0.5); gap('SMD','SMV',0.4);
+gap('ASK','RMG',0.5); gap('ADL','ASK',0.3);
+
+// ============================================================
+// PHEROMONE FIELD
+// ============================================================
+const PHERO_W = 60, PHERO_H = 40;
+const pheroField = new Float32Array(PHERO_W * PHERO_H);
+const PHERO_DECAY = 0.9992;
+
+function depositPhero(wx, wy){
+  if(!canvas.width||!canvas.height) return;
+  const px = Math.floor((wx/canvas.width)*PHERO_W);
+  const py = Math.floor((wy/canvas.height)*PHERO_H);
+  if(px>=0&&px<PHERO_W&&py>=0&&py<PHERO_H)
+    pheroField[py*PHERO_W+px] = Math.min(1, pheroField[py*PHERO_W+px]+0.015);
+}
+function samplePhero(wx, wy){
+  if(!canvas.width||!canvas.height) return 0;
+  const px = Math.floor((wx/canvas.width)*PHERO_W);
+  const py = Math.floor((wy/canvas.height)*PHERO_H);
+  if(px<0||px>=PHERO_W||py<0||py>=PHERO_H) return 0;
+  return pheroField[py*PHERO_W+px];
+}
+function decayPhero(){ for(let i=0;i<pheroField.length;i++) pheroField[i]*=PHERO_DECAY; }
+
+// ============================================================
+// WORM CLASS
+// ============================================================
+const WORM_COLORS = ['#a8d870','#80cbc4','#ffb74d','#ce93d8','#f4645a'];
+const WORM_DARKS  = ['#5a8820','#3a8878','#c87820','#8a5098','#a82820'];
+
+const NSEGS   = 28;
+const SEG_LEN = 8;
+
+const HEBB_RATE  = 0.003;
+const HEBB_DECAY = 0.9999;
+const WPLAST_MAX = 1.5;
+
+class Worm {
+  constructor(id, x, y, angle){
+    this.id    = id;
+    this.color = WORM_COLORS[id % WORM_COLORS.length];
+    this.dark  = WORM_DARKS[id % WORM_DARKS.length];
+
+    this.act   = new Float32Array(N);
+    this.pot   = new Float32Array(N);
+    this.prev  = new Float32Array(N);
+    this.adapt = new Float32Array(N);
+    this.Wp    = Array.from({length:N},()=>new Float32Array(N));
+    this.totalHebb = 0;
+
+    this.DA  = 0.1;
+    this.SHT = 0.1;
+    this.NLP = 0.1;
+    this.HNG = 0.25;
+    this.SOC = 0.0;
+
+    this.segs   = [];
+    this.angle  = angle;
+    this.behavior  = 'idle';
+    this.revTimer  = 0;
+    this.smoothCurv = 0;
+
+    // Qualia — smoothed functional-analog inner states
+    this.qualia = { noci:0, appr:0, contact:0, arousal:0, hunger:0, valence:0 };
+
+    for(let i=0;i<NSEGS;i++)
+      this.segs.push({ x: x - i*SEG_LEN*Math.cos(angle), y: y - i*SEG_LEN*Math.sin(angle) });
+
+    this._stim('AVB', 0.6);
+    this._stim('PVC', 0.4);
+  }
+
+  W(to,from){ return Wbase[to][from] + this.Wp[to][from]; }
+
+  _stim(name, amt){
+    const i=idx[name];
+    if(i===undefined) return;
+    this.act[i] = Math.min(1, this.act[i]+amt);
+    this.pot[i] += amt*2;
+  }
+
+  stepNeurons(){
+    this.prev.set(this.act);
+    const {DA,SHT,NLP,HNG,SOC} = this;
+
+    for(let i=0;i<N;i++){
+      let inp=0;
+      for(let j=0;j<N;j++){
+        const w=this.W(i,j);
+        if(w!==0) inp += w*this.prev[j] + (w>0?(Math.random()+Math.random()-1)*0.08:0);
+      }
+      const adaptCur = this.adapt[i]*0.32;
+      const nm=NEURON_NAMES[i];
+      let gain=1.0;
+      if(nm==='AVA'||nm==='AVD'||nm==='AVE') gain -= DA*0.4 - SOC*0.1;
+      if(nm==='AVB'||nm==='PVC')             gain += DA*0.3 + SOC*0.15;
+      if(nm==='DB1'||nm==='DB2'||nm==='VB1'||nm==='VB2') gain += DA*0.2 - SHT*0.25;
+      if(nm==='SMD'||nm==='SMV'||nm==='RME') gain += NLP*0.45;
+      if(nm==='AIY')                          gain += HNG*0.35 + SOC*0.2;
+      if(nm==='RIM'||nm==='AIZ')              gain -= SHT*0.25;
+      if(nm==='RMG'||nm==='ASK')              gain += SOC*0.5;
+      gain = Math.max(0.2, gain);
+
+      const totalInp = (inp - adaptCur) * gain;
+      this.pot[i] = this.pot[i]*0.72 + totalInp*0.28;
+      const sig = 1/(1+Math.exp(-4.5*(this.pot[i]/3+0.5)));
+      this.act[i] = Math.max(0, Math.min(1, this.act[i]*0.83 + sig*(1-0.83)));
+      this.adapt[i] = this.adapt[i]*0.97 + this.act[i]*0.16;
+    }
+  }
+
+  hebbStep(){
+    let totalDelta=0;
+    for(let i=0;i<N;i++){
+      for(let j=0;j<N;j++){
+        if(!Wconn[i][j]) continue;
+        const dw = HEBB_RATE * this.prev[j] * this.act[i];
+        this.Wp[i][j] = Math.max(-WPLAST_MAX, Math.min(WPLAST_MAX,
+          (this.Wp[i][j] + dw) * HEBB_DECAY
+        ));
+        totalDelta += Math.abs(this.Wp[i][j]);
+      }
+    }
+    this.totalHebb = totalDelta;
+  }
+
+  decayMod(){
+    const T=0.9985;
+    this.DA  *= T; this.SHT *= T; this.NLP *= T; this.SOC *= T;
+    this.HNG = Math.min(1, this.HNG + 0.00012);
+  }
+
+  computeQualia(){
+    const a = this.act;
+    const smooth = 0.93; // heavy smoothing so the ring moves like breath, not jitter
+
+    // Nociception — ASH (touch/chemical nociceptor), PVD (harsh touch), PHB (repellent)
+    const nociRaw = Math.min(1, a[idx['ASH']]*1.4 + a[idx['PVD']]*0.8 + a[idx['PHB']]*0.6);
+
+    // Approach / appetitive — AWA (attractive odour), AIY (forward integration), AVB
+    const apprRaw = Math.min(1, a[idx['AWA']]*1.2 + a[idx['AIY']]*0.9 + a[idx['AVB']]*0.5);
+
+    // Social contact — RMG hub, ASK, plus SOC neuromodulator
+    const socRaw  = Math.min(1, a[idx['RMG']]*1.0 + a[idx['ASK']]*0.8 + this.SOC*0.9);
+
+    // Arousal — NLP peptide level, SMD (head oscillation), DA
+    const arosRaw = Math.min(1, this.NLP*0.8 + a[idx['SMD']]*0.6 + this.DA*0.6);
+
+    // Hunger — direct from internal state
+    const hungRaw = Math.min(1, this.HNG);
+
+    // Valence — approach minus nociception, biased by serotonin (contentment)
+    const valRaw  = Math.max(0, Math.min(1, 0.5 + (apprRaw - nociRaw)*0.6 + this.SHT*0.2));
+
+    const q = this.qualia;
+    q.noci    = q.noci    * smooth + nociRaw * (1-smooth);
+    q.appr    = q.appr    * smooth + apprRaw * (1-smooth);
+    q.contact = q.contact * smooth + socRaw  * (1-smooth);
+    q.arousal = q.arousal * smooth + arosRaw * (1-smooth);
+    q.hunger  = q.hunger  * smooth + hungRaw * (1-smooth);
+    q.valence = q.valence * smooth + valRaw  * (1-smooth);
+  }
+
+  onFoodConsumed(){
+    this.DA  = Math.min(1,this.DA+0.55);
+    this.SHT = Math.min(1,this.SHT+0.35);
+    this.NLP = Math.min(1,this.NLP+0.2);
+    this.HNG = Math.max(0,this.HNG-0.65);
+  }
+  onFoodSmelled(){
+    this.DA  = Math.min(1,this.DA+0.04);
+    this.HNG = Math.max(0,this.HNG-0.015);
+  }
+  onSocialContact(intensity){
+    this.SHT = Math.min(1, this.SHT + intensity*0.08);
+    this.SOC = Math.min(1, this.SOC + intensity*0.12);
+    this._stim('ASK', intensity*0.5);
+    this._stim('RMG', intensity*0.4);
+  }
+
+  updateBody(tick){
+    if(tick%10===0){
+      let sum=0, count=0;
+      for(let i=1;i<NSEGS-1;i++){
+        const ax=this.segs[i].x-this.segs[i-1].x, ay=this.segs[i].y-this.segs[i-1].y;
+        const bx=this.segs[i+1].x-this.segs[i].x, by=this.segs[i+1].y-this.segs[i].y;
+        sum+=Math.atan2(ax*by-ay*bx, ax*bx+ay*by); count++;
+      }
+      const raw = count?sum/count:0;
+      this.smoothCurv = this.smoothCurv*0.96 + raw*0.04;
+      const dva=idx['DVA'];
+      this.pot[dva] = this.pot[dva]*0.9 + this.smoothCurv*0.06;
+    }
+
+    const fwd=(this.act[idx['DB1']]+this.act[idx['DB2']]+this.act[idx['VB1']]+this.act[idx['VB2']])/4;
+    const bwd=(this.act[idx['DA1']]+this.act[idx['VA1']])/2;
+    const hb  = this.act[idx['SMD']]-this.act[idx['SMV']];
+    const net = fwd - bwd;
+    const spd = net*(1.9 - this.SHT*0.55);
+
+    this.behavior = bwd>0.5&&bwd>fwd+0.1 ? 'reversing'
+                  : fwd>0.28 ? (spd>0.85?'fast-crawl':'crawling')
+                  : 'idle';
+
+    this.angle += hb*(0.07 + this.NLP*0.04);
+
+    const uFreq = 0.038 + Math.abs(spd)*0.018;
+    // Keep lateral amplitude small enough that segments never fold back on themselves
+    const uAmp  = Math.min(0.18, 0.10 + Math.abs(spd)*0.06);
+    const head  = this.segs[0];
+    const dir   = spd>=0 ? this.angle : this.angle+Math.PI;
+    const sp    = Math.abs(spd)*1.4 + (fwd>0.1?0.35:0);
+
+    head.x += Math.cos(dir)*sp;
+    head.y += Math.sin(dir)*sp;
+
+    const MG=40, W=canvas.width, H=canvas.height;
+    if(W>0&&H>0){
+      if(head.x<MG)   { head.x=MG;   this.angle=Math.abs(this.angle%Math.PI<Math.PI/2?this.angle:Math.PI-this.angle)+(Math.random()-.5)*0.4; }
+      if(head.x>W-MG) { head.x=W-MG; this.angle=Math.PI-(this.angle%(Math.PI*2))+(Math.random()-.5)*0.4; }
+      if(head.y<MG)   { head.y=MG;   this.angle=-Math.abs(this.angle)+(Math.random()-.5)*0.4; }
+      if(head.y>H-MG) { head.y=H-MG; this.angle=Math.abs(this.angle)-(Math.random()-.5)*0.4; }
+    }
+    this.angle = ((this.angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+
+    // Chain-follow: pull each segment toward its parent at fixed distance
+    for(let pass=0;pass<3;pass++){
+      const relax = pass===0?0.8:pass===1?0.5:0.3;
+      for(let i=1;i<NSEGS;i++){
+        const p=this.segs[i-1], c=this.segs[i];
+        const dx=c.x-p.x, dy=c.y-p.y;
+        const d=Math.sqrt(dx*dx+dy*dy)||1;
+        const nx=dx/d, ny=dy/d;
+        const lat = Math.sin(tick*uFreq - i*0.42)*uAmp*(i/NSEGS)*(spd>=0?1:-1);
+        c.x += (p.x + nx*SEG_LEN - ny*lat*SEG_LEN - c.x)*relax;
+        c.y += (p.y + ny*SEG_LEN + nx*lat*SEG_LEN - c.y)*relax;
+      }
+    }
+
+    // Enforce max bend angle between consecutive segments to prevent folding
+    const MAX_BEND = Math.PI * 0.55; // ~100 degrees max turn per segment
+    for(let i=1;i<NSEGS-1;i++){
+      const a=this.segs[i-1], b=this.segs[i], c=this.segs[i+1];
+      const ax=b.x-a.x, ay=b.y-a.y;
+      const bx=c.x-b.x, by=c.y-b.y;
+      const angle=Math.atan2(ax*by-ay*bx, ax*bx+ay*by);
+      if(Math.abs(angle)>MAX_BEND){
+        const clamp=angle>0?MAX_BEND:-MAX_BEND;
+        const cos=Math.cos(clamp), sin=Math.sin(clamp);
+        const d2=Math.sqrt(ax*ax+ay*ay)||1;
+        const ux=ax/d2, uy=ay/d2;
+        c.x=b.x+(ux*cos-uy*sin)*SEG_LEN;
+        c.y=b.y+(ux*sin+uy*cos)*SEG_LEN;
+      }
+    }
+
+    if(tick%130===0&&this.behavior==='idle'){ this._stim('AVB',0.35); this._stim('PVC',0.28); }
+
+    if(this.behavior==='reversing'){
+      this.revTimer++;
+      if(this.revTimer>85){
+        this.angle += (Math.random()-.5)*Math.PI*1.3;
+        this._stim('AVB',0.85); this._stim('PVC',0.65);
+        this.pot[idx['AVA']]=0; this.pot[idx['AVD']]=0; this.adapt[idx['AVA']]=0;
+        this.revTimer=0;
+        lg(`worm ${this.id+1} omega turn`, true);
+      }
+    } else { this.revTimer=0; }
+
+    this.decayMod();
+  }
+
+  draw(tick, isSelected){
+    if(this.segs.length<2) return;
+
+    // Smooth spline: quadratic bezier through midpoints (no more polygon kinks)
+    const buildPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(this.segs[0].x, this.segs[0].y);
+      for(let i = 0; i < NSEGS - 1; i++){
+        const mx = (this.segs[i].x + this.segs[i+1].x) * 0.5;
+        const my = (this.segs[i].y + this.segs[i+1].y) * 0.5;
+        ctx.quadraticCurveTo(this.segs[i].x, this.segs[i].y, mx, my);
+      }
+      ctx.lineTo(this.segs[NSEGS-1].x, this.segs[NSEGS-1].y);
+    };
+
+    ctx.save();
+    ctx.lineCap='round'; ctx.lineJoin='round';
+
+    // glow halo — one shadow draw then kill shadow for all remaining strokes
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur  = isSelected ? 14 : 6;
+    buildPath();
+    ctx.strokeStyle = this.color+'55';
+    ctx.lineWidth   = 18;
+    ctx.stroke();
+
+    ctx.shadowBlur  = 0;
+    ctx.shadowColor = 'transparent';
+
+    // dark body core
+    buildPath();
+    ctx.strokeStyle = this.dark;
+    ctx.lineWidth   = 13;
+    ctx.stroke();
+
+    // colour highlight
+    buildPath();
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth   = 6;
+    ctx.stroke();
+
+    // specular sheen
+    buildPath();
+    ctx.strokeStyle = this.color+'28';
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+
+    ctx.restore();
+
+    // --- head bulb (no shadow — just a crisp circle) ---
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(this.segs[0].x, this.segs[0].y, 5.5, 0, Math.PI*2);
+    ctx.fillStyle = '#e8f5d0';
+    ctx.fill();
+    ctx.restore();
+
+    // --- motor pulse dot (no shadow) ---
+    const mns=['DB1','DB2','VB1','VB2','DA1','VA1'];
+    const avgM=mns.reduce((s,n)=>s+this.act[idx[n]],0)/mns.length;
+    if(avgM>0.28){
+      const fs=Math.floor((tick*0.09%1)*NSEGS);
+      if(fs>=0&&fs<NSEGS){
+        ctx.save();
+        ctx.globalAlpha = avgM*0.7;
+        ctx.beginPath();
+        ctx.arc(this.segs[fs].x, this.segs[fs].y, 2.5, 0, Math.PI*2);
+        ctx.fillStyle='#fff59d';
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+}
+
+// ============================================================
+// GLOBAL STATE
+// ============================================================
+let worms  = [];
+let selIdx = 0;
+let tick   = 0;
+let tool   = 'poke';
+let mx=0, my=0, mdown=false;
+let particles=[], food=[];
+
+// ============================================================
+// WORM MANAGEMENT
+// ============================================================
+function addWorm(){
+  if(worms.length>=5){ document.getElementById('addBtn').disabled=true; return; }
+  const W=canvas.width||800, H=canvas.height||500;
+  const angle = Math.random()*Math.PI*2;
+  const offsets=[[0.3,0.5],[0.7,0.3],[0.7,0.7],[0.3,0.3],[0.5,0.7]];
+  const o=offsets[worms.length]||[0.4+Math.random()*0.2,0.4+Math.random()*0.2];
+  const w=new Worm(worms.length, o[0]*W, o[1]*H, angle);
+  worms.push(w);
+  rebuildWormTabs();
+  document.getElementById('wormCount').textContent=`${worms.length} worm${worms.length>1?'s':''} · 302 neurons each`;
+  if(worms.length>=5) document.getElementById('addBtn').disabled=true;
+  lg(`worm ${worms.length} joined`, true);
+}
+
+function rebuildWormTabs(){
+  const el=document.getElementById('wormTabs');
+  el.innerHTML='';
+  worms.forEach((w,i)=>{
+    const d=document.createElement('div');
+    d.className='worm-tab'+(i===selIdx?' active':'');
+    d.style.borderColor=i===selIdx?w.color+'88':'';
+    d.style.color=i===selIdx?w.color:'';
+    d.textContent=`W${i+1}`;
+    d.onclick=()=>{ selIdx=i; rebuildWormTabs(); };
+    el.appendChild(d);
+  });
+}
+
+// ============================================================
+// SOCIAL
+// ============================================================
+function processSocial(){
+  for(let a=0;a<worms.length;a++){
+    for(let b=a+1;b<worms.length;b++){
+      const wa=worms[a], wb=worms[b];
+      const ha=wa.segs[0], hb=wb.segs[0];
+      const d=Math.hypot(ha.x-hb.x, ha.y-hb.y);
+      if(d<120){
+        const intensity = Math.max(0, (120-d)/120);
+        wa.onSocialContact(intensity);
+        wb.onSocialContact(intensity);
+        if(d<80){
+          ctx.save(); ctx.globalAlpha=((80-d)/80)*0.18;
+          ctx.beginPath(); ctx.moveTo(ha.x,ha.y); ctx.lineTo(hb.x,hb.y);
+          ctx.strokeStyle='#80cbc4'; ctx.lineWidth=1.5;
+          ctx.setLineDash([3,5]); ctx.stroke();
+          ctx.restore();
+        }
+        if(d<50){
+          const angDiff=Math.atan2(Math.sin(wb.angle-wa.angle),Math.cos(wb.angle-wa.angle));
+          wa.angle+=angDiff*0.01;
+          wb.angle-=angDiff*0.01;
+          if(tick%120===0) lg(`worms ${a+1}+${b+1} dwelling together`, false, 'social');
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// FOOD
+// ============================================================
+function checkFood(){
+  worms.forEach(w=>{
+    const h=w.segs[0];
+    food.forEach(f=>{
+      const d=Math.hypot(f.x-h.x,f.y-h.y);
+      if(d<130){
+        const str=0.035+w.HNG*0.045;
+        const a=Math.atan2(f.y-h.y,f.x-h.x);
+        w.angle+=Math.atan2(Math.sin(a-w.angle),Math.cos(a-w.angle))*str;
+        w._stim('AWA',.07); w._stim('AVB',.14);
+        w.onFoodSmelled();
+      }
+      if(d<14){ f.consumed=true; w.onFoodConsumed(); lg(`worm ${w.id+1} ate food`,true); }
+    });
+  });
+  food=food.filter(f=>!f.consumed);
+  food.forEach(f=>f.life--);
+  food=food.filter(f=>f.life>0);
+}
+
+// ============================================================
+// STIMULI
+// ============================================================
+function setTool(t){
+  tool=t;
+  ['poke','heat','light','food'].forEach(id=>{
+    document.getElementById('btn-'+id).className='tool-btn'+(id===t?' t-'+t:'');
+  });
+}
+
+function applyStim(x,y){
+  if(tool==='food'){
+    food.push({x,y,life:600,r:8});
+    worms.forEach(w=>{ w._stim('AWC',.4); w._stim('AWA',.7); });
+    lg('food placed',true);
+    addParticles(x,y,'food'); return;
+  }
+  let bestWorm=null, bestD=Infinity, bestSeg=0;
+  worms.forEach(w=>{
+    w.segs.forEach((s,i)=>{
+      const d=Math.hypot(s.x-x,s.y-y);
+      if(d<bestD){ bestD=d; bestWorm=w; bestSeg=i; }
+    });
+  });
+  if(!bestWorm) return;
+  const radius=tool==='heat'?65:tool==='light'?85:32;
+  if(bestD>radius) return;
+  addParticles(x,y,tool);
+  const isHead=bestSeg<NSEGS*0.25, isTail=bestSeg>NSEGS*0.75;
+  if(tool==='poke'){
+    if(!isTail){ bestWorm._stim('ASH',0.9); bestWorm._stim('ALM',isHead?.8:.5); bestWorm._stim('AVM',.7); lg(`poke W${bestWorm.id+1} ${isHead?'head':'body'} → ASH → reversal`,true); }
+    else        { bestWorm._stim('PVD',0.9); bestWorm._stim('PLM',.8); bestWorm._stim('PVC',.7); lg(`poke W${bestWorm.id+1} tail → acceleration`,true); }
+  } else if(tool==='heat'){
+    bestWorm._stim('AFD',.75); bestWorm._stim('ASH',.5);
+    lg(`W${bestWorm.id+1} heat → AFD thermosensor`,false);
+  } else if(tool==='light'){
+    bestWorm._stim('ASH',.65); bestWorm._stim('AWC',-.35);
+    lg(`W${bestWorm.id+1} light → photonociception`,false);
+  }
+}
+
+function addParticles(x,y,t){
+  const cols={poke:'#ce93d8',heat:'#ff7043',light:'#fff59d',food:'#66bb6a'};
+  for(let i=0;i<7;i++){
+    const a=Math.random()*Math.PI*2,s=Math.random()*2+.5;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:cols[t]||'#fff',sz:Math.random()*3+1});
+  }
+}
+
+// ============================================================
+// RENDERING
+// ============================================================
+function drawEnv(){
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,0.014)'; ctx.lineWidth=1;
+  for(let x=0;x<canvas.width; x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+  for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+  ctx.restore();
+
+  // Pheromone field rendering intentionally hidden
+
+  food.forEach(f=>{
+    const al=Math.min(1,f.life/60);
+    ctx.save(); ctx.globalAlpha=al;
+    const g=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r*3.5);
+    g.addColorStop(0,'rgba(102,187,106,0.45)'); g.addColorStop(1,'rgba(102,187,106,0)');
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.r*3.5,0,Math.PI*2); ctx.fillStyle=g; ctx.fill();
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2);
+    ctx.fillStyle='#66bb6a'; ctx.fill();
+    ctx.restore();
+  });
+
+  particles.forEach(p=>{
+    ctx.save(); ctx.globalAlpha=p.life*.8;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.sz,0,Math.PI*2);
+    ctx.fillStyle=p.color; ctx.fill();
+    ctx.restore();
+    p.x+=p.vx; p.y+=p.vy; p.vx*=.92; p.vy*=.92; p.life-=.032;
+  });
+  particles=particles.filter(p=>p.life>0);
+
+  if((tool==='heat'||tool==='light')&&mdown){
+    const r=tool==='heat'?65:85;
+    const fc=tool==='heat'?'rgba(255,87,34,0.05)':'rgba(255,245,100,0.04)';
+    const bc=tool==='heat'?'rgba(255,87,34,0.20)':'rgba(255,245,100,0.20)';
+    ctx.save(); ctx.beginPath(); ctx.arc(mx,my,r,0,Math.PI*2);
+    ctx.fillStyle=fc; ctx.fill(); ctx.strokeStyle=bc; ctx.lineWidth=1; ctx.stroke();
+    ctx.restore();
+  }
+
+}
+
+// ============================================================
+// UI
+// ============================================================
+const KN=[
+  {name:'ASH',color:'#4fc3f7'},{name:'AWA',color:'#4fc3f7'},{name:'AFD',color:'#4fc3f7'},
+  {name:'PLM',color:'#4fc3f7'},
+  {name:'AVA',color:'#ce93d8'},{name:'AVB',color:'#ce93d8'},
+  {name:'AIY',color:'#ce93d8'},{name:'AIB',color:'#ce93d8'},
+  {name:'DVA',color:'#80cbc4'},{name:'RMG',color:'#80cbc4'},{name:'ASK',color:'#80cbc4'},
+  {name:'DB1',color:'#ffb74d'},{name:'DA1',color:'#ffb74d'},{name:'SMD',color:'#ffb74d'},
+];
+const ng=document.getElementById('neuroGrid');
+KN.forEach(n=>{ng.innerHTML+=`<div class="neuro-row"><div class="neuro-name" style="color:${n.color}">${n.name}</div><div class="neuro-bar-bg"><div class="neuro-bar" id="bar-${n.name}" style="background:${n.color}"></div></div><div class="neuro-val" id="val-${n.name}">0</div></div>`;});
+
+const qCanvas = document.getElementById('qualiaCanvas');
+const qCtx    = qCanvas.getContext('2d');
+
+// Six qualia dimensions mapped to angles around a ring
+const QDIMS = [
+  { key:'noci',    label:'nociception', color:'#ef9a9a', angle: -Math.PI/2 },
+  { key:'appr',    label:'approach',    color:'#fff59d', angle: -Math.PI/2 + Math.PI*2/6 },
+  { key:'contact', label:'contact',     color:'#80cbc4', angle: -Math.PI/2 + Math.PI*4/6 },
+  { key:'arousal', label:'arousal',     color:'#ffcc80', angle: -Math.PI/2 + Math.PI*6/6 },
+  { key:'hunger',  label:'hunger',      color:'#b0bec5', angle: -Math.PI/2 + Math.PI*8/6 },
+  { key:'valence', label:'valence',     color:'#ce93d8', angle: -Math.PI/2 + Math.PI*10/6 },
+];
+
+function drawQualiaRing(w){
+  const q=w.qualia;
+  const cx=31, cy=31, maxR=26, minR=7;
+  qCtx.clearRect(0,0,62,62);
+
+  // Background ring
+  qCtx.beginPath(); qCtx.arc(cx,cy,maxR,0,Math.PI*2);
+  qCtx.strokeStyle='#1c2028'; qCtx.lineWidth=1; qCtx.stroke();
+
+  // Filled polygon — one vertex per dimension at radius = minR + val*(maxR-minR)
+  const pts = QDIMS.map(d=>{
+    const r = minR + q[d.key] * (maxR - minR);
+    return { x: cx + Math.cos(d.angle)*r, y: cy + Math.sin(d.angle)*r, color: d.color, val: q[d.key] };
+  });
+
+  // Valence-tinted fill
+  const v=q.valence;
+  let fr,fg,fb;
+  if(v<0.5){ const t=v*2; fr=Math.round(180-t*60);fg=Math.round(80+t*80);fb=80; }
+  else      { const t=(v-0.5)*2; fr=100;fg=Math.round(160+t*43);fb=Math.round(80+t*116); }
+  const fillAlpha=(0.12+q.arousal*0.1).toFixed(2);
+
+  qCtx.beginPath();
+  qCtx.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<pts.length;i++) qCtx.lineTo(pts[i].x,pts[i].y);
+  qCtx.closePath();
+  qCtx.fillStyle=`rgba(${fr},${fg},${fb},${fillAlpha})`;
+  qCtx.fill();
+  qCtx.strokeStyle=`rgba(${fr},${fg},${fb},0.5)`;
+  qCtx.lineWidth=1; qCtx.stroke();
+
+  // Dots at each vertex
+  pts.forEach((p,i)=>{
+    qCtx.beginPath(); qCtx.arc(p.x,p.y,2.5,0,Math.PI*2);
+    qCtx.fillStyle=QDIMS[i].color;
+    qCtx.globalAlpha=0.4+p.val*0.6;
+    qCtx.fill();
+    qCtx.globalAlpha=1;
+  });
+
+  // Centre dot — intensity of all qualia combined
+  const totalQ = QDIMS.reduce((s,d)=>s+q[d.key],0)/QDIMS.length;
+  qCtx.beginPath(); qCtx.arc(cx,cy,2+totalQ*3,0,Math.PI*2);
+  qCtx.fillStyle=`rgba(${fr},${fg},${fb},${0.5+totalQ*0.5})`;
+  qCtx.fill();
+}
+
+function updateUI(){
+  const w=worms[selIdx]; if(!w) return;
+  KN.forEach(n=>{
+    const pct=(w.act[idx[n.name]]*100).toFixed(0);
+    document.getElementById('bar-'+n.name).style.width=pct+'%';
+    document.getElementById('val-'+n.name).textContent=pct;
+  });
+  document.getElementById('bar-DA').style.width=(w.DA*100)+'%'; document.getElementById('val-DA').textContent=(w.DA*100).toFixed(0);
+  document.getElementById('bar-5HT').style.width=(w.SHT*100)+'%'; document.getElementById('val-5HT').textContent=(w.SHT*100).toFixed(0);
+  document.getElementById('bar-NLP').style.width=(w.NLP*100)+'%'; document.getElementById('val-NLP').textContent=(w.NLP*100).toFixed(0);
+  document.getElementById('bar-HNG').style.width=(w.HNG*100)+'%'; document.getElementById('val-HNG').textContent=(w.HNG*100).toFixed(0);
+  document.getElementById('bar-SOC').style.width=(w.SOC*100)+'%'; document.getElementById('val-SOC').textContent=(w.SOC*100).toFixed(0);
+
+  document.getElementById('st-behavior').textContent=w.behavior;
+  const fwd=(w.act[idx['DB1']]+w.act[idx['DB2']]+w.act[idx['VB1']]+w.act[idx['VB2']])/4;
+  const bwd=(w.act[idx['DA1']]+w.act[idx['VA1']])/2;
+  document.getElementById('st-speed').textContent=(Math.abs(fwd-bwd)*2).toFixed(1);
+
+  const nearCount=worms.filter((other,i)=>i!==selIdx&&Math.hypot(other.segs[0].x-w.segs[0].x,other.segs[0].y-w.segs[0].y)<120).length;
+  document.getElementById('st-social').textContent=nearCount>0?`${nearCount} near`:'alone';
+  document.getElementById('st-social').style.color=nearCount>0?'#80cbc4':'';
+
+  const stims={poke:'touch',heat:'thermal',light:'photo',food:'chemo'};
+  document.getElementById('st-stim').textContent=mdown?(stims[tool]||'—'):'—';
+
+  const hebbPct=Math.min(100,(w.totalHebb/(N*N*WPLAST_MAX))*800);
+  document.getElementById('hebbBar').style.width=hebbPct+'%';
+  document.getElementById('hebbVal').textContent=w.totalHebb.toFixed(1);
+
+  document.getElementById('tickCount').textContent='t='+tick;
+
+  // Qualia ring + labels
+  drawQualiaRing(w);
+  const q=w.qualia;
+  document.getElementById('q-noci').textContent = q.noci > 0.05 ? (q.noci*100).toFixed(0)+'%' : '—';
+  document.getElementById('q-appr').textContent = q.appr > 0.05 ? (q.appr*100).toFixed(0)+'%' : '—';
+  document.getElementById('q-soc').textContent  = q.contact > 0.05 ? (q.contact*100).toFixed(0)+'%' : '—';
+  document.getElementById('q-arous').textContent= q.arousal > 0.05 ? (q.arousal*100).toFixed(0)+'%' : '—';
+  document.getElementById('q-hung').textContent = (q.hunger*100).toFixed(0)+'%';
+  const vLabel = q.valence > 0.6 ? 'good' : q.valence < 0.4 ? 'bad' : 'neutral';
+  document.getElementById('q-val').textContent  = vLabel;
+  document.getElementById('q-val').style.color  = q.valence > 0.6 ? '#80cbc4' : q.valence < 0.4 ? '#ef9a9a' : '#888';
+}
+
+function lg(msg,hi=false,cls=''){
+  const el=document.createElement('div');
+  el.className='log-entry recent'+(hi?' hi':'')+(cls?' '+cls:'');
+  el.textContent=`[${tick}] ${msg}`;
+  const logEl=document.getElementById('eventLog');
+  logEl.appendChild(el);
+  if(logEl.children.length>50) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight;
+  setTimeout(()=>{if(el.parentNode)el.className='log-entry'+(cls?' '+cls:'');},3000);
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+const sb=document.getElementById('sandbox');
+sb.addEventListener('mousemove',e=>{
+  const r=sb.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top;
+  if(mdown&&(tool==='heat'||tool==='light')) applyStim(mx,my);
+});
+sb.addEventListener('mousedown',e=>{
+  mdown=true;
+  const r=sb.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top;
+  applyStim(mx,my);
+});
+sb.addEventListener('mouseup',()=>mdown=false);
+sb.addEventListener('touchstart',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];applyStim(t.clientX-r.left,t.clientY-r.top);},{passive:false});
+sb.addEventListener('touchmove',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];mx=t.clientX-r.left;my=t.clientY-r.top;if(tool==='heat'||tool==='light')applyStim(mx,my);},{passive:false});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Reset shadow state at frame start — prevents bleed between draws
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+  drawEnv();
+
+  worms.forEach(w=>{
+    for(let s=0;s<3;s++) w.stepNeurons();
+    if(tick%5===0) w.hebbStep();
+    w.computeQualia();
+    w.updateBody(tick);
+  });
+
+  processSocial();
+
+  worms.forEach(w=>depositPhero(w.segs[0].x, w.segs[0].y));
+
+  worms.forEach(w=>{
+    const h=w.segs[0];
+    const dp=8;
+    const samples=[{dx:dp,dy:0},{dx:-dp,dy:0},{dx:0,dy:dp},{dx:0,dy:-dp}];
+    let bx=0,by=0,bv=0;
+    samples.forEach(s=>{
+      const v=samplePhero(h.x+s.dx,h.y+s.dy);
+      if(v>bv){ bv=v; bx=s.dx; by=s.dy; }
+    });
+    if(bv>0.1&&w.HNG>0.3){
+      const a=Math.atan2(by,bx);
+      w.angle+=Math.atan2(Math.sin(a-w.angle),Math.cos(a-w.angle))*0.02;
+    }
+  });
+
+  decayPhero();
+  checkFood();
+
+  worms.forEach((w,i)=>{ if(i!==selIdx) w.draw(tick,false); });
+  if(worms[selIdx]) worms[selIdx].draw(tick,true);
+
+  if(tick%4===0) updateUI();
+  tick++;
+  requestAnimationFrame(loop);
+}
+
+setInterval(()=>{
+  worms.forEach(w=>{
+    const rni=Math.floor(Math.random()*N);
+    w.pot[rni]+=(Math.random()-.62)*0.26;
+    const revP=0.018+w.HNG*0.045;
+    if(Math.random()<revP&&w.behavior==='crawling'){
+      w._stim('AVA',.72); w._stim('AVD',.52);
+      if(w.id===selIdx) lg(`W${w.id+1} spontaneous reversal`+(w.HNG>.65?' [hunger]':''),false);
+    }
+  });
+},500);
+
+// ============================================================
+// BOOT — resize FIRST (so canvas has real px dimensions), then spawn worm
+// ============================================================
+window.addEventListener('load', () => {
+  resize();
+  addWorm();
+  lg('302 neurons · Hebbian learning · gap junctions · social circuit', false);
+  lg('use + add worm to create a colony', false);
+  loop();
+});
+</script>
+</body>
+</html>
