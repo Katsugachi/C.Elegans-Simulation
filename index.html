@@ -977,46 +977,43 @@ function applyStim(x, y, fresh){
 }
 
 // ============================================================
-// INPUT — overlay div sits on top of canvas and catches all events
+// INPUT
 // ============================================================
-// ============================================================
-// INPUT — window-level listeners with canvas rect, works everywhere incl. GH Pages
-// ============================================================
-function getCanvasPos(clientX, clientY){
-  const r = canvas.getBoundingClientRect();
-  return { x: clientX - r.left, y: clientY - r.top };
-}
-function inCanvas(clientX, clientY){
-  const r = canvas.getBoundingClientRect();
-  return clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom;
-}
-
-window.addEventListener('mousemove', e=>{
-  if(!inCanvas(e.clientX, e.clientY)){ mdown=false; return; }
-  const p=getCanvasPos(e.clientX,e.clientY); mx=p.x; my=p.y;
+// offsetX/offsetY are always relative to the element — no rect math needed
+canvas.onmousemove = e=>{
+  mx = e.offsetX; my = e.offsetY;
   if(mdown && (tool==='heat'||tool==='light')) applyStim(mx,my,false);
-});
-window.addEventListener('mousedown', e=>{
-  if(!inCanvas(e.clientX, e.clientY)) return;
-  mdown=true;
-  const p=getCanvasPos(e.clientX,e.clientY); mx=p.x; my=p.y;
+};
+canvas.onmousedown = e=>{
+  mdown=true; mx=e.offsetX; my=e.offsetY;
   applyStim(mx,my,true);
-});
-window.addEventListener('mouseup', ()=>mdown=false);
+};
+canvas.onmouseup   = ()=>mdown=false;
+canvas.onmouseleave= ()=>mdown=false;
+
+// Also attach to overlay in case canvas is covered
+const overlay = document.getElementById('clickOverlay');
+overlay.onmousemove = e=>{ mx=e.offsetX; my=e.offsetY; if(mdown&&(tool==='heat'||tool==='light')) applyStim(mx,my,false); };
+overlay.onmousedown = e=>{
+  mdown=true; mx=e.offsetX; my=e.offsetY;
+  lg(`CLICK (${Math.round(mx)},${Math.round(my)}) tool=${tool}`, true);
+  applyStim(mx,my,true);
+};
+overlay.onmouseup   = ()=>mdown=false;
+overlay.onmouseleave= ()=>mdown=false;
+
 window.addEventListener('touchstart', e=>{
-  const t=e.touches[0];
-  if(!inCanvas(t.clientX,t.clientY)) return;
-  e.preventDefault(); mdown=true;
-  const p=getCanvasPos(t.clientX,t.clientY); mx=p.x; my=p.y;
+  const t=e.touches[0], r=canvas.getBoundingClientRect();
+  mdown=true; mx=t.clientX-r.left; my=t.clientY-r.top;
   applyStim(mx,my,true);
-},{passive:false});
+},{passive:true});
 window.addEventListener('touchmove', e=>{
-  const t=e.touches[0];
-  e.preventDefault();
-  const p=getCanvasPos(t.clientX,t.clientY); mx=p.x; my=p.y;
+  const t=e.touches[0], r=canvas.getBoundingClientRect();
+  mx=t.clientX-r.left; my=t.clientY-r.top;
   if(tool==='heat'||tool==='light') applyStim(mx,my,false);
-},{passive:false});
+},{passive:true});
 window.addEventListener('touchend', ()=>mdown=false);
+window.addEventListener('mouseup',  ()=>mdown=false);
 
 // ============================================================
 // RENDERING
@@ -1061,14 +1058,16 @@ function drawEnv(){
     ctx.restore();
   }
 
-  // Always-visible cursor dot so user knows where they're clicking
+  // Cursor dot — large and obvious
   const cursorCols = { poke:'#ce93d8', heat:'#ff7043', light:'#fff59d', food:'#66bb6a' };
   const cc = cursorCols[tool] || '#fff';
   ctx.save();
-  ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI*2);
-  ctx.fillStyle = cc; ctx.globalAlpha = 0.5; ctx.fill();
-  ctx.beginPath(); ctx.arc(mx, my, 10, 0, Math.PI*2);
-  ctx.strokeStyle = cc; ctx.lineWidth = 1; ctx.globalAlpha = 0.2; ctx.stroke();
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath(); ctx.arc(mx, my, 6, 0, Math.PI*2);
+  ctx.fillStyle = cc; ctx.fill();
+  ctx.globalAlpha = 0.3;
+  ctx.beginPath(); ctx.arc(mx, my, 18, 0, Math.PI*2);
+  ctx.strokeStyle = cc; ctx.lineWidth = 2; ctx.stroke();
   ctx.restore();
 
 }
