@@ -17,7 +17,8 @@
   html, body {
     background: var(--bg); color: var(--text);
     font-family: 'DM Sans', sans-serif;
-    height: 100%; display: flex; flex-direction: column;
+    height: 100vh; min-height: 100vh;
+    display: flex; flex-direction: column;
     overflow: hidden; user-select: none;
   }
 
@@ -579,14 +580,19 @@ class Worm {
   }
 
   decayMod(){
-    const T=0.9985;
-    this.DA  *= T; this.SHT *= T; this.NLP *= T; this.SOC *= T;
-    this.HNG = Math.min(1, this.HNG + 0.00012);
+    // Slow decay — changes stay visible 20-40s
+    this.DA  = this.DA  * 0.9996 + 0.0008; // tonic DA floor keeps worm moving
+    this.SHT = this.SHT * 0.9994;
+    this.NLP = this.NLP * 0.9991;
+    this.SOC = this.SOC * 0.9988;
+    this.HNG = Math.min(1, this.HNG + 0.00028); // hunger rises over ~5min
+    if(this.HNG > 0.5) this.SHT = Math.max(0, this.SHT - 0.0004); // hunger kills contentment
+    if(this.HNG > 0.8) this.DA  = Math.max(0, this.DA  - 0.0003); // starving suppresses drive
   }
 
   computeQualia(){
     const a = this.act;
-    const smooth = 0.93; // heavy smoothing so the ring moves like breath, not jitter
+    const smooth = 0.78; // smoothed but responsive
 
     // Nociception — ASH (touch/chemical nociceptor), PVD (harsh touch), PHB (repellent)
     const nociRaw = Math.min(1, a[idx['ASH']]*1.4 + a[idx['PVD']]*0.8 + a[idx['PHB']]*0.6);
@@ -615,21 +621,27 @@ class Worm {
     q.valence = q.valence * smooth + valRaw  * (1-smooth);
   }
 
+  onHurt(){
+    this.NLP = Math.min(1, this.NLP + 0.45); // stress peptide spike
+    this.DA  = Math.max(0, this.DA  - 0.25); // pain suppresses dopamine
+    this.SHT = Math.max(0, this.SHT - 0.20); // serotonin drops
+  }
   onFoodConsumed(){
-    this.DA  = Math.min(1,this.DA+0.55);
-    this.SHT = Math.min(1,this.SHT+0.35);
-    this.NLP = Math.min(1,this.NLP+0.2);
-    this.HNG = Math.max(0,this.HNG-0.65);
+    this.DA  = Math.min(1, this.DA  + 0.65); // dopamine reward
+    this.SHT = Math.min(1, this.SHT + 0.55); // satiety/contentment
+    this.NLP = Math.min(1, this.NLP + 0.15); // mild peptide release
+    this.HNG = Math.max(0, this.HNG - 0.75); // hunger crashes
+    lg('worm ' + (this.id+1) + ' satiated — DA+SHT spike', true);
   }
   onFoodSmelled(){
-    this.DA  = Math.min(1,this.DA+0.04);
-    this.HNG = Math.max(0,this.HNG-0.015);
+    this.DA  = Math.min(1, this.DA  + 0.08); // anticipatory dopamine
+    this.HNG = Math.max(0, this.HNG - 0.010);
   }
   onSocialContact(intensity){
-    this.SHT = Math.min(1, this.SHT + intensity*0.08);
-    this.SOC = Math.min(1, this.SOC + intensity*0.12);
-    this._stim('ASK', intensity*0.5);
-    this._stim('RMG', intensity*0.4);
+    this.SHT = Math.min(1, this.SHT + intensity * 0.14);
+    this.SOC = Math.min(1, this.SOC + intensity * 0.20);
+    this._stim('ASK', intensity * 0.6);
+    this._stim('RMG', intensity * 0.5);
   }
 
   updateBody(tick){
@@ -971,18 +983,20 @@ function applyStim(x, y, fresh){
   if(tool==='poke'){
     // Directly flip angle away from click point — guaranteed visible
     const away = Math.atan2(bestWorm.segs[0].y - y, bestWorm.segs[0].x - x);
-    bestWorm.angle = away + (Math.random()-.5)*0.5;
-    bestWorm._stim('ASH', 1.0); bestWorm._stim('AVA', 1.0); bestWorm._stim('AVD', 0.8);
+    bestWorm.angle = away + Math.PI + (Math.random()-.5)*0.5;
+    bestWorm.onHurt(); bestWorm._stim('ASH', 1.0); bestWorm._stim('AVA', 1.0); bestWorm._stim('AVD', 0.8);
     if(!isTail){ bestWorm._stim('ALM', 0.8); bestWorm._stim('AVM', 0.8); }
     else       { bestWorm._stim('PVD', 1.0); bestWorm._stim('PLM', 0.9); }
     lg(`poke W${bestWorm.id+1} seg${bestSeg} → flee`, true);
   } else if(tool==='heat'){
-    bestWorm._stim('AFD', 1.0); bestWorm._stim('ASH', 0.8);
-    bestWorm.angle += (Math.random()-.5)*Math.PI;
+    const away = Math.atan2(bestWorm.segs[0].y - y, bestWorm.segs[0].x - x);
+    bestWorm.angle = away + Math.PI + (Math.random()-.5)*0.6;
+    bestWorm.onHurt(); bestWorm._stim('AFD', 1.0); bestWorm._stim('ASH', 0.8);
     lg(`W${bestWorm.id+1} heat`, false);
   } else if(tool==='light'){
-    bestWorm._stim('ASH', 0.9); bestWorm._stim('AWC', -0.5);
-    bestWorm.angle += (Math.random()-.5)*Math.PI*0.8;
+    const away = Math.atan2(bestWorm.segs[0].y - y, bestWorm.segs[0].x - x);
+    bestWorm.angle = away + Math.PI + (Math.random()-.5)*0.4;
+    bestWorm.onHurt(); bestWorm._stim('ASH', 0.9); bestWorm._stim('AWC', -0.5);
     lg(`W${bestWorm.id+1} light`, false);
   }
 }
@@ -1226,15 +1240,33 @@ function loop(){
 
 setInterval(()=>{
   worms.forEach(w=>{
+    // Random neural noise
     const rni=Math.floor(Math.random()*N);
-    w.pot[rni]+=(Math.random()-.62)*0.26;
-    const revP=0.018+w.HNG*0.045;
-    if(Math.random()<revP&&w.behavior==='crawling'){
-      w._stim('AVA',.72); w._stim('AVD',.52);
-      if(w.id===selIdx) lg(`W${w.id+1} spontaneous reversal`+(w.HNG>.65?' [hunger]':''),false);
+    w.pot[rni]+=(Math.random()-.58)*0.30;
+
+    // Hunger-driven foraging — hungry worms pirouette more
+    const revP = 0.015 + w.HNG*0.06 + w.NLP*0.04;
+    if(Math.random()<revP && w.behavior!=='reversing'){
+      w._stim('AVA', 0.75); w._stim('AVD', 0.55);
+      if(w.id===selIdx) lg('W'+(w.id+1)+' pirouette'+(w.HNG>.6?' [hungry]':w.NLP>.4?' [stressed]':''), false);
+    }
+
+    // Stressed worms (high NLP) thrash — random angle jitter
+    if(w.NLP > 0.4 && Math.random() < w.NLP * 0.08){
+      w.angle += (Math.random()-.5) * 0.9;
+    }
+
+    // Contented worms (high SHT) slow down and dwell
+    if(w.SHT > 0.5 && Math.random() < 0.02){
+      w._stim('AVB', 0.2); // gentle forward drive
+    }
+
+    // Spontaneous DA-driven forward bursts
+    if(w.DA > 0.5 && Math.random() < 0.03){
+      w._stim('AVB', 0.5); w._stim('PVC', 0.4);
     }
   });
-},500);
+},400);
 
 // ============================================================
 // BOOT — resize FIRST (so canvas has real px dimensions), then spawn worm
