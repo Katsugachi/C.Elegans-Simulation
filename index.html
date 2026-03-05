@@ -58,8 +58,10 @@
   .right-col {
     width: 232px; display: flex; flex-direction: column;
     background: var(--panel); border-left: 1px solid #1e2228;
-    overflow: hidden; flex-shrink: 0;
+    overflow-y: auto; overflow-x: hidden; flex-shrink: 0;
   }
+  .right-col::-webkit-scrollbar { width: 2px; }
+  .right-col::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 2px; }
   .panel-section { padding: 10px 13px; border-bottom: 1px solid #1a1d22; flex-shrink: 0; }
   .panel-label {
     font-family: 'Space Mono', monospace; font-size: 8px;
@@ -123,7 +125,7 @@
   .hebb-bar-bg { flex: 1; height: 2px; background: #1c1f26; border-radius: 1px; overflow: hidden; }
   .hebb-bar { height: 100%; background: #6ecf8e; border-radius: 1px; transition: width .3s; }
 
-  .log { flex: 1; overflow-y: auto; padding: 7px 13px; display: flex; flex-direction: column; gap: 3px; min-height: 0; }
+  .log { min-height: 80px; max-height: 160px; overflow-y: auto; padding: 7px 13px; display: flex; flex-direction: column; gap: 3px; }
   .log::-webkit-scrollbar { width: 2px; }
   .log::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 2px; }
   .log-entry { font-family: 'Space Mono', monospace; font-size: 7px; color: #3a3f4a; animation: fadeIn .3s ease; line-height: 1.5; }
@@ -643,6 +645,7 @@ class Worm {
     const hb  = this.act[idx['SMD']]-this.act[idx['SMV']];
     const net = fwd - bwd;
     const spd = net*(1.9 - this.SHT*0.55);
+    this.speedVal = Math.abs(fwd - bwd) * 2; // cache for UI
 
     this.behavior = bwd>0.5&&bwd>fwd+0.1 ? 'reversing'
                   : fwd>0.28 ? (spd>0.85?'fast-crawl':'crawling')
@@ -887,6 +890,41 @@ function checkFood(){
 }
 
 // ============================================================
+// CLICK RIPPLES — always visible feedback on every click
+// ============================================================
+let ripples = [];
+
+function spawnRipple(x, y, tool){
+  const cols = { poke:'#ce93d8', heat:'#ff7043', light:'#fff59d', food:'#66bb6a' };
+  ripples.push({ x, y, r:0, maxR: tool==='food'?45:tool==='heat'?90:tool==='light'?100:55,
+    color: cols[tool]||'#fff', life:1 });
+}
+
+function drawRipples(){
+  ripples.forEach(rp=>{
+    const t = 1 - rp.life;
+    rp.r = rp.maxR * t;
+    const alpha = rp.life * 0.55;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, Math.max(1, rp.r), 0, Math.PI*2);
+    ctx.strokeStyle = rp.color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+    // filled centre
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, Math.max(1, rp.r * 0.35), 0, Math.PI*2);
+    ctx.fillStyle = rp.color;
+    ctx.globalAlpha = alpha * 0.25;
+    ctx.fill();
+    ctx.restore();
+    rp.life -= 0.045;
+  });
+  ripples = ripples.filter(rp => rp.life > 0);
+}
+
+// ============================================================
 // STIMULI
 // ============================================================
 function setTool(t){
@@ -896,42 +934,43 @@ function setTool(t){
   });
 }
 
-function applyStim(x,y){
+function applyStim(x, y){
+  spawnRipple(x, y, tool);
+
   if(tool==='food'){
-    food.push({x,y,life:600,r:8});
+    food.push({x, y, life:600, r:8});
     worms.forEach(w=>{ w._stim('AWC',.4); w._stim('AWA',.7); });
-    lg('food placed',true);
-    addParticles(x,y,'food'); return;
+    lg('food placed', true);
+    return;
   }
+
+  // Find nearest worm segment — no proximity gate, always affects closest worm
   let bestWorm=null, bestD=Infinity, bestSeg=0;
   worms.forEach(w=>{
     w.segs.forEach((s,i)=>{
-      const d=Math.hypot(s.x-x,s.y-y);
+      const d=Math.hypot(s.x-x, s.y-y);
       if(d<bestD){ bestD=d; bestWorm=w; bestSeg=i; }
     });
   });
   if(!bestWorm) return;
-  const radius=tool==='heat'?120:tool==='light'?140:60;
-  if(bestD>radius) return;
-  addParticles(x,y,tool);
-  const isHead=bestSeg<NSEGS*0.25, isTail=bestSeg>NSEGS*0.75;
+
+  const isHead = bestSeg < NSEGS*0.25;
+  const isTail = bestSeg > NSEGS*0.75;
+
   if(tool==='poke'){
-    if(!isTail){ bestWorm._stim('ASH',0.9); bestWorm._stim('ALM',isHead?.8:.5); bestWorm._stim('AVM',.7); lg(`poke W${bestWorm.id+1} ${isHead?'head':'body'} → ASH → reversal`,true); }
-    else        { bestWorm._stim('PVD',0.9); bestWorm._stim('PLM',.8); bestWorm._stim('PVC',.7); lg(`poke W${bestWorm.id+1} tail → acceleration`,true); }
+    if(!isTail){
+      bestWorm._stim('ASH',0.9); bestWorm._stim('ALM',isHead?.8:.5); bestWorm._stim('AVM',.7);
+      lg(`poke W${bestWorm.id+1} ${isHead?'head':'body'} → reversal`, true);
+    } else {
+      bestWorm._stim('PVD',0.9); bestWorm._stim('PLM',.8); bestWorm._stim('PVC',.7);
+      lg(`poke W${bestWorm.id+1} tail → acceleration`, true);
+    }
   } else if(tool==='heat'){
     bestWorm._stim('AFD',.75); bestWorm._stim('ASH',.5);
-    lg(`W${bestWorm.id+1} heat → AFD thermosensor`,false);
+    lg(`W${bestWorm.id+1} heat → AFD thermosensor`, false);
   } else if(tool==='light'){
     bestWorm._stim('ASH',.65); bestWorm._stim('AWC',-.35);
-    lg(`W${bestWorm.id+1} light → photonociception`,false);
-  }
-}
-
-function addParticles(x,y,t){
-  const cols={poke:'#ce93d8',heat:'#ff7043',light:'#fff59d',food:'#66bb6a'};
-  for(let i=0;i<7;i++){
-    const a=Math.random()*Math.PI*2,s=Math.random()*2+.5;
-    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:cols[t]||'#fff',sz:Math.random()*3+1});
+    lg(`W${bestWorm.id+1} light → photonociception`, false);
   }
 }
 
@@ -967,14 +1006,26 @@ function drawEnv(){
   });
   particles=particles.filter(p=>p.life>0);
 
+  drawRipples();
+
   if((tool==='heat'||tool==='light')&&mdown){
-    const r=tool==='heat'?65:85;
-    const fc=tool==='heat'?'rgba(255,87,34,0.05)':'rgba(255,245,100,0.04)';
-    const bc=tool==='heat'?'rgba(255,87,34,0.20)':'rgba(255,245,100,0.20)';
+    const r=tool==='heat'?90:100;
+    const fc=tool==='heat'?'rgba(255,87,34,0.06)':'rgba(255,245,100,0.05)';
+    const bc=tool==='heat'?'rgba(255,87,34,0.25)':'rgba(255,245,100,0.25)';
     ctx.save(); ctx.beginPath(); ctx.arc(mx,my,r,0,Math.PI*2);
     ctx.fillStyle=fc; ctx.fill(); ctx.strokeStyle=bc; ctx.lineWidth=1; ctx.stroke();
     ctx.restore();
   }
+
+  // Always-visible cursor dot so user knows where they're clicking
+  const cursorCols = { poke:'#ce93d8', heat:'#ff7043', light:'#fff59d', food:'#66bb6a' };
+  const cc = cursorCols[tool] || '#fff';
+  ctx.save();
+  ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI*2);
+  ctx.fillStyle = cc; ctx.globalAlpha = 0.5; ctx.fill();
+  ctx.beginPath(); ctx.arc(mx, my, 10, 0, Math.PI*2);
+  ctx.strokeStyle = cc; ctx.lineWidth = 1; ctx.globalAlpha = 0.2; ctx.stroke();
+  ctx.restore();
 
 }
 
@@ -1065,14 +1116,14 @@ function updateUI(){
   document.getElementById('bar-HNG').style.width=(w.HNG*100)+'%'; document.getElementById('val-HNG').textContent=(w.HNG*100).toFixed(0);
   document.getElementById('bar-SOC').style.width=(w.SOC*100)+'%'; document.getElementById('val-SOC').textContent=(w.SOC*100).toFixed(0);
 
-  document.getElementById('st-behavior').textContent=w.behavior;
-  const fwd=(w.act[idx['DB1']]+w.act[idx['DB2']]+w.act[idx['VB1']]+w.act[idx['VB2']])/4;
-  const bwd=(w.act[idx['DA1']]+w.act[idx['VA1']])/2;
-  document.getElementById('st-speed').textContent=(Math.abs(fwd-bwd)*2).toFixed(1);
+  document.getElementById('st-behavior').textContent = w.behavior;
+  document.getElementById('st-speed').textContent = (w.speedVal||0).toFixed(1);
 
-  const nearCount=worms.filter((other,i)=>i!==selIdx&&Math.hypot(other.segs[0].x-w.segs[0].x,other.segs[0].y-w.segs[0].y)<120).length;
-  document.getElementById('st-social').textContent=nearCount>0?`${nearCount} near`:'alone';
-  document.getElementById('st-social').style.color=nearCount>0?'#80cbc4':'';
+  const nearCount = worms.filter((other,i) => i!==selIdx && other.segs.length &&
+    Math.hypot(other.segs[0].x-w.segs[0].x, other.segs[0].y-w.segs[0].y)<120).length;
+  const socialEl = document.getElementById('st-social');
+  socialEl.textContent = nearCount>0 ? `${nearCount} near` : 'alone';
+  socialEl.style.color = nearCount>0 ? '#80cbc4' : '';
 
   const stims={poke:'touch',heat:'thermal',light:'photo',food:'chemo'};
   document.getElementById('st-stim').textContent=mdown?(stims[tool]||'—'):'—';
@@ -1113,16 +1164,19 @@ function lg(msg,hi=false,cls=''){
 const sb=document.getElementById('sandbox');
 sb.addEventListener('mousemove',e=>{
   const r=sb.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top;
-  if(mdown&&(tool==='heat'||tool==='light')) applyStim(mx,my);
+  if(mdown) applyStim(mx,my);
 });
 sb.addEventListener('mousedown',e=>{
+  e.preventDefault();
   mdown=true;
   const r=sb.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top;
   applyStim(mx,my);
 });
 sb.addEventListener('mouseup',()=>mdown=false);
-sb.addEventListener('touchstart',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];applyStim(t.clientX-r.left,t.clientY-r.top);},{passive:false});
-sb.addEventListener('touchmove',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];mx=t.clientX-r.left;my=t.clientY-r.top;if(tool==='heat'||tool==='light')applyStim(mx,my);},{passive:false});
+sb.addEventListener('mouseleave',()=>mdown=false);
+sb.addEventListener('touchstart',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];mx=t.clientX-r.left;my=t.clientY-r.top;mdown=true;applyStim(mx,my);},{passive:false});
+sb.addEventListener('touchmove',e=>{e.preventDefault();const r=sb.getBoundingClientRect(),t=e.touches[0];mx=t.clientX-r.left;my=t.clientY-r.top;applyStim(mx,my);},{passive:false});
+sb.addEventListener('touchend',()=>mdown=false);
 
 // ============================================================
 // MAIN LOOP
@@ -1166,7 +1220,7 @@ function loop(){
   worms.forEach((w,i)=>{ if(i!==selIdx) w.draw(tick,false); });
   if(worms[selIdx]) worms[selIdx].draw(tick,true);
 
-  if(tick%4===0) updateUI();
+  updateUI();
   tick++;
   requestAnimationFrame(loop);
 }
