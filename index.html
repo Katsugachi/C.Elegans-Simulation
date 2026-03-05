@@ -167,80 +167,9 @@
   .exp-panel .hi { color: var(--ni); }
   .exp-panel .hm { color: var(--nm); }
   .exp-panel .hy { color: var(--act); }
-/* Ethics modal */
-  #ethicsModal {
-    position: fixed; inset: 0; z-index: 999;
-    background: rgba(5,7,10,0.92);
-    display: flex; align-items: center; justify-content: center;
-    backdrop-filter: blur(4px);
-  }
-  .ethics-box {
-    background: #0d0f13; border: 1px solid #2a2d35;
-    border-radius: 10px; max-width: 520px; width: 90%;
-    padding: 28px 30px; box-shadow: 0 8px 48px rgba(0,0,0,0.6);
-  }
-  .ethics-box h2 {
-    font-family: 'Space Mono', monospace; font-size: 11px;
-    letter-spacing: .18em; color: #c8e6a0; text-transform: uppercase;
-    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
-  }
-  .ethics-box h2 svg { flex-shrink: 0; }
-  .ethics-box p {
-    font-size: 12px; line-height: 1.7; color: #8a9aaa; margin-bottom: 10px;
-  }
-  .ethics-box p strong { color: #c8d8b0; font-weight: 500; }
-  .ethics-box .ethics-points {
-    border-top: 1px solid #1e2228; border-bottom: 1px solid #1e2228;
-    padding: 12px 0; margin: 14px 0; display: flex; flex-direction: column; gap: 8px;
-  }
-  .ethics-point {
-    display: flex; gap: 10px; align-items: flex-start;
-    font-size: 11px; line-height: 1.6; color: #7a8a9a;
-  }
-  .ethics-point-icon { flex-shrink: 0; margin-top: 2px; color: #4a5a40; font-family: 'Space Mono', monospace; font-size: 9px; width: 14px; }
-  .ethics-fine {
-    font-size: 10px; color: #3a4050; line-height: 1.6; font-family: 'Space Mono', monospace;
-  }
-  .ethics-confirm {
-    margin-top: 18px; display: flex; align-items: center; gap: 10px;
-  }
-  .ethics-confirm button {
-    font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: .1em;
-    background: #0e1a09; border: 1px solid #7ab648; border-radius: 5px;
-    color: #c8e6a0; padding: 8px 18px; cursor: pointer; transition: all .15s;
-  }
-  .ethics-confirm button:hover { background: #162808; }
-  .ethics-confirm span {
-    font-size: 10px; color: #3a4050; font-family: 'Space Mono', monospace;
-  }
 </style>
 </head>
 <body>
-
-<div id="ethicsModal">
-  <div class="ethics-box">
-    <h2>
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <circle cx="7" cy="7" r="6" stroke="#c8e6a0" stroke-width="1.2"/>
-        <line x1="7" y1="6" x2="7" y2="10" stroke="#c8e6a0" stroke-width="1.4" stroke-linecap="round"/>
-        <circle cx="7" cy="4" r=".8" fill="#c8e6a0"/>
-      </svg>
-      Research Ethics Notice
-    </h2>
-    <p>This is a <strong>computational simulation</strong> of <em>Caenorhabditis elegans</em> neural circuitry. No biological organisms are involved. All worms, neurons, and behaviours exist solely as mathematical models running in your browser.</p>
-    <div class="ethics-points">
-      <div class="ethics-point"><div class="ethics-point-icon">01</div><div><strong style="color:#8a9aaa">No animals are harmed.</strong> C. elegans is a 1mm soil nematode. The stimuli (poke, heat, light, food) trigger simulated neural responses — there is no physical organism, no tissue, no pain.</div></div>
-      <div class="ethics-point"><div class="ethics-point-icon">02</div><div><strong style="color:#8a9aaa">C. elegans lacks a brain.</strong> Its 302 neurons form a distributed nerve net with no centralised processing. The scientific consensus is that it does not have the neural architecture required for sentience or subjective suffering.</div></div>
-      <div class="ethics-point"><div class="ethics-point-icon">03</div><div><strong style="color:#8a9aaa">The "qualia" panel is epistemic, not empirical.</strong> Labels like "nociception" and "valence" describe functional circuit states, not confirmed subjective experience. They are heuristic proxies used for educational insight, not claims about consciousness.</div></div>
-      <div class="ethics-point"><div class="ethics-point-icon">04</div><div><strong style="color:#8a9aaa">This models real published science.</strong> The connectome is from White et al. (1986) and Varshney et al. (2011) — the only completely mapped nervous system of any animal. Using it in simulation is standard practice in computational neuroscience.</div></div>
-      <div class="ethics-point"><div class="ethics-point-icon">05</div><div><strong style="color:#8a9aaa">Real C. elegans research is tightly regulated.</strong> Live nematode work involves institutional ethics review. This simulation exists precisely to enable exploration without consuming biological resources.</div></div>
-    </div>
-    <p class="ethics-fine">By proceeding you acknowledge this is a scientific visualisation tool. The worms are not real. The neurons are equations. The suffering, if any, is yours alone — contemplating whether equations can suffer.</p>
-    <div class="ethics-confirm">
-      <button onclick="document.getElementById('ethicsModal').style.display='none'">I UNDERSTAND — BEGIN SIMULATION</button>
-    </div>
-  </div>
-</div>
 
 <header>
   <div class="title"><em>Caenorhabditis elegans</em> <span>— neural sandbox</span></div>
